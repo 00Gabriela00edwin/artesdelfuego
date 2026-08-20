@@ -137,7 +137,7 @@ export default function App() {
     ['Posadas', 'Oberá'].forEach(loc => {
       categories.forEach(cat => {
         cat.materials.forEach(mat => {
-          initial[`${loc}-${mat}`] = { stock: 1000, unit: getBaseUnit(cat.name), unitCostBase: 0 };
+          initial[`${loc}-${mat}`] = { stock: 0, unit: getBaseUnit(cat.name), unitCostBase: 0 };
         });
       });
     });
