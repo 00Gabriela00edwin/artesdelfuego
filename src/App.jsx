@@ -692,7 +692,7 @@ export default function App() {
             <input type="number" min="0" step="0.01" placeholder="$ 0,00" value={unitCost} onChange={e => handleProtectedChange(setUnitCost, e.target.value)} className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
           </label>
           <label className="text-sm font-semibold">Responsable <span className="font-normal opacity-60">(opcional)</span>
-            <input type="text" value={responsible} onChange={e => handleProtectedChange(setResponsible, e.target.value)} placeholder="Ej. Ebal" className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
+            <input type="text" value={responsible} onChange={e => handleProtectedChange(setResponsible, e.target.value)} placeholder="Ej. Nombre" className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
           </label>
           <label className="text-sm font-semibold">Destino o uso
             <select value={destination} onChange={e => handleProtectedChange(setDestination, e.target.value)} className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg">
@@ -789,7 +789,7 @@ export default function App() {
             <input type="date" value={activeLabForm.resultDate} onChange={event => handleLabFieldChange('resultDate', event.target.value)} className="mt-1 w-full rounded-lg bg-[#241714] p-3 text-[#f8eee1] outline-none ring-1 ring-[#8d5239] focus:ring-[#d49758]" />
           </label>
           <label className="text-sm font-semibold text-[#f4dfc2]">Agregado por
-            <input type="text" value={activeLabForm.addedBy} onChange={event => handleLabFieldChange('addedBy', event.target.value)} placeholder="Ej. Ebal" className="mt-1 w-full rounded-lg bg-[#241714] p-3 text-[#f8eee1] outline-none ring-1 ring-[#8d5239] focus:ring-[#d49758]" />
+            <input type="text" value={activeLabForm.addedBy} onChange={event => handleLabFieldChange('addedBy', event.target.value)} placeholder="Ej. Nombre" className="mt-1 w-full rounded-lg bg-[#241714] p-3 text-[#f8eee1] outline-none ring-1 ring-[#8d5239] focus:ring-[#d49758]" />
           </label>
           <label className="text-sm font-semibold text-[#f4dfc2] lg:col-span-2">Composición porcentual de la fórmula
             <textarea value={activeLabForm.composition} onChange={event => handleLabFieldChange('composition', event.target.value)} placeholder="Ej. Arcilla 50% · Feldespato 25% · Sílice 20% · Bentonita 5%" rows="3" className="mt-1 w-full resize-y rounded-lg bg-[#241714] p-3 text-[#f8eee1] outline-none ring-1 ring-[#8d5239] focus:ring-[#d49758]" />
