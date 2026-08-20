@@ -135,6 +135,7 @@ const formatCalculatedAmount = (value, unit) => {
 export default function App() {
   const [taller, setTaller] = useState('Posadas');
   const [customMaterials, setCustomMaterials] = useState([]);
+  const [deletedBaseMaterials, setDeletedBaseMaterials] = useState([]);
   const [materialError, setMaterialError] = useState('');
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [newMaterialCategory, setNewMaterialCategory] = useState('');
@@ -186,7 +187,7 @@ export default function App() {
 
   const allCategories = categories.map(category => ({
     ...category,
-    materials: [...category.materials, ...customMaterials.filter(material => material.categoryName === category.name).map(material => material.name)]
+    materials: [...category.materials.filter(material => !deletedBaseMaterials.includes(`${category.name}-${material}`)), ...customMaterials.filter(material => material.categoryName === category.name).map(material => material.name)]
   }));
 
   useEffect(() => {
@@ -430,13 +431,14 @@ export default function App() {
     setMaterialError('');
   };
 
-  const handleDeleteMaterial = async (material) => {
-    const customMaterial = customMaterials.find(item => item.name === material);
+  const handleDeleteMaterial = async (material, categoryName) => {
+    if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
+    const customMaterial = customMaterials.find(item => item.name === material && item.categoryName === categoryName);
     if (!customMaterial?.id) {
-      setMaterialError('Este material pertenece al catálogo base y no se puede eliminar desde Firebase.');
+      setDeletedBaseMaterials(current => [...current, `${categoryName}-${material}`]);
+      setMaterialError('');
       return;
     }
-    if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
 
     try {
       await deleteDoc(doc(db, 'materials', customMaterial.id));
@@ -472,18 +474,28 @@ export default function App() {
 
     setIsSavingMaterial(true);
     setMaterialError('');
+    const materialData = {
+      name: materialName,
+      categoryName: newMaterialCategory,
+      initialStock: toBaseUnits(amountValue, newMaterialUnit),
+      initialUnit: newMaterialUnit,
+      taller,
+      createdAt: serverTimestamp()
+    };
     try {
-      await addDoc(collection(db, 'materials'), {
-        name: materialName,
-        categoryName: newMaterialCategory,
-        initialStock: toBaseUnits(amountValue, newMaterialUnit),
-        initialUnit: newMaterialUnit,
-        taller,
-        createdAt: serverTimestamp()
-      });
+      console.info('[Firebase] Guardando material en la colección "materials"', materialData);
+      await addDoc(collection(db, 'materials'), materialData);
       setIsMaterialModalOpen(false);
     } catch (error) {
-      console.error('No se pudo guardar el material en Firebase', error);
+      console.error('[Firebase] No se pudo guardar el material', {
+        code: error?.code || 'sin código',
+        name: error?.name || 'Error',
+        message: error?.message || String(error),
+        stack: error?.stack || 'sin stack disponible',
+        collection: 'materials',
+        payload: materialData,
+        firebaseProject: 'artes-del-fuego'
+      });
       setMaterialError('No se pudo guardar el material. Revisa la conexión y los permisos de Firebase.');
     } finally {
       setIsSavingMaterial(false);
@@ -908,7 +920,6 @@ export default function App() {
               {isCategoryOpen && <div id={`category-${category.name}`} className="mt-4 border-t border-current/20 pt-2">
                 {category.materials.map(material => {
                   const materialStock = inventory[`${taller}-${material}`]?.stock || 0;
-                  const isCustomMaterial = customMaterials.some(item => item.name === material && item.categoryName === category.name);
                   const isLowStock = materialStock < minimumStock;
                   const materialPercentage = Math.round((materialStock / getMaxStockForCategory(category.name)) * 100);
                   const materialProgress = Math.min(100, Math.max(0, materialPercentage));
@@ -927,7 +938,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? `Volumen: ${formatStock(materialStock, category.name)}` : formatStock(materialStock, category.name)}</span>
-                      <button type="button" onClick={() => handleDeleteMaterial(material)} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition ${isCustomMaterial ? 'text-red-200 hover:bg-red-700 hover:text-white' : 'cursor-not-allowed text-red-200/40'}`} aria-label={`Eliminar material ${material}`} title={isCustomMaterial ? 'Eliminar material' : 'Material del catálogo base protegido'}>
+                      <button type="button" onClick={() => handleDeleteMaterial(material, category.name)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-red-200 transition hover:bg-red-700 hover:text-white" aria-label={`Eliminar material ${material}`} title="Eliminar material">
                         <Trash2 size={14} />
                       </button>
                     </div>
