@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus } from 'lucide-react';
 import { db } from './firebase';
 
@@ -428,6 +428,29 @@ export default function App() {
     if (isSavingMaterial) return;
     setIsMaterialModalOpen(false);
     setMaterialError('');
+  };
+
+  const handleDeleteMaterial = async (material) => {
+    const customMaterial = customMaterials.find(item => item.name === material);
+    if (!customMaterial?.id) return;
+    if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'materials', customMaterial.id));
+      setInventory(currentInventory => {
+        const nextInventory = { ...currentInventory };
+        delete nextInventory[`${customMaterial.taller || taller}-${material}`];
+        return nextInventory;
+      });
+      if (selectedMat === material) {
+        setSelectedMat('');
+        setMaterialQuery('');
+        setIsMaterialListOpen(false);
+      }
+    } catch (error) {
+      console.error('No se pudo eliminar el material de Firebase', error);
+      setMaterialError('No se pudo eliminar el material. Revisa la conexión y los permisos de Firebase.');
+    }
   };
 
   const handleNewMaterialSubmit = async (event) => {
@@ -882,6 +905,7 @@ export default function App() {
               {isCategoryOpen && <div id={`category-${category.name}`} className="mt-4 border-t border-current/20 pt-2">
                 {category.materials.map(material => {
                   const materialStock = inventory[`${taller}-${material}`]?.stock || 0;
+                  const isCustomMaterial = customMaterials.some(item => item.name === material && item.categoryName === category.name);
                   const isLowStock = materialStock < minimumStock;
                   const materialPercentage = Math.round((materialStock / getMaxStockForCategory(category.name)) * 100);
                   const materialProgress = Math.min(100, Math.max(0, materialPercentage));
@@ -898,7 +922,10 @@ export default function App() {
                         <div className={`progress-fill h-full rounded-full ${progressColor}`} style={{ width: `${materialProgress}%` }} />
                       </div>
                     </div>
-                    <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? `Volumen: ${formatStock(materialStock, category.name)}` : formatStock(materialStock, category.name)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? `Volumen: ${formatStock(materialStock, category.name)}` : formatStock(materialStock, category.name)}</span>
+                      {isCustomMaterial && <button type="button" onClick={() => handleDeleteMaterial(material)} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-red-200 transition hover:bg-red-700 hover:text-white" aria-label={`Eliminar material ${material}`} title="Eliminar material"><Trash2 size={14} /> Eliminar</button>}
+                    </div>
                     </div>
                     {category.name === gresCategoryName && <>
                       <button type="button" onClick={() => setOpenFormula(isFormulaOpen ? '' : formulaKey)} className="mt-2 text-xs font-bold text-current/70 hover:text-current">
