@@ -542,7 +542,7 @@ export default function App() {
             <input type="number" min="0" step="0.01" placeholder="$ 0,00" value={unitCost} onChange={e => handleProtectedChange(setUnitCost, e.target.value)} className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
           </label>
           <label className="text-sm font-semibold">Responsable <span className="font-normal opacity-60">(opcional)</span>
-            <input type="text" value={responsible} onChange={e => handleProtectedChange(setResponsible, e.target.value)} placeholder="Ej. Gaby Edwin" className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
+            <input type="text" value={responsible} onChange={e => handleProtectedChange(setResponsible, e.target.value)} placeholder="Ej. Ebal" className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
           </label>
           <label className="text-sm font-semibold">Destino o uso
             <select value={destination} onChange={e => handleProtectedChange(setDestination, e.target.value)} className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg">
