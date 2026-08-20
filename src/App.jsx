@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus } from 'lucide-react';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 
 const gresMaterials = [
   { name: 'Bordo', formula: 'Feldespato 45% · Sílice 30% · Caolín 15% · Óxido de hierro 10%' },
@@ -143,6 +144,7 @@ export default function App() {
   const [newMaterialAmount, setNewMaterialAmount] = useState('');
   const [newMaterialUnit, setNewMaterialUnit] = useState('g');
   const [isSavingMaterial, setIsSavingMaterial] = useState(false);
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false);
   const [inventory, setInventory] = useState(() => {
     const initial = {};
     ['Posadas', 'Oberá'].forEach(loc => {
@@ -191,6 +193,17 @@ export default function App() {
   }));
 
   useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      setIsFirebaseReady(Boolean(user));
+    });
+    signInAnonymously(auth).catch(error => {
+      console.error('[Firebase Auth] No se pudo iniciar sesión anónima', {
+        code: error?.code || 'sin código',
+        message: error?.message || String(error),
+        project: 'artes-del-fuego'
+      });
+      setMaterialError('Firebase no pudo autenticar la sesión. Habilita el proveedor Anónimo en Authentication.');
+    });
     const unsubscribe = onSnapshot(collection(db, 'materials'), snapshot => {
       const nextMaterials = snapshot.docs.map(documentSnapshot => ({ id: documentSnapshot.id, ...documentSnapshot.data() }));
       setCustomMaterials(nextMaterials);
@@ -213,7 +226,10 @@ export default function App() {
       console.error('No se pudieron cargar los materiales de Firebase', error);
       setMaterialError('No se pudieron sincronizar los materiales nuevos con Firebase.');
     });
-    return unsubscribe;
+    return () => {
+      unsubscribeAuth();
+      unsubscribe();
+    };
   }, []);
 
   const selectedCategory = getCategoryForMaterial(selectedMat, allCategories);
@@ -474,6 +490,11 @@ export default function App() {
 
     setIsSavingMaterial(true);
     setMaterialError('');
+    if (!isFirebaseReady) {
+      setIsSavingMaterial(false);
+      setMaterialError('Firebase todavía está conectando. Intenta nuevamente en unos segundos.');
+      return;
+    }
     const materialData = {
       name: materialName,
       categoryName: newMaterialCategory,
