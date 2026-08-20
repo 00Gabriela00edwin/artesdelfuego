@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { addDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus } from 'lucide-react';
+import { db } from './firebase';
 
 const gresMaterials = [
   { name: 'Bordo', formula: 'Feldespato 45% · Sílice 30% · Caolín 15% · Óxido de hierro 10%' },
@@ -78,7 +80,7 @@ const unitOptions = {
   liquid: ['ml', 'L']
 };
 
-const getCategoryForMaterial = (material) => categories.find(category => category.materials.includes(material));
+const getCategoryForMaterial = (material, categoryList = categories) => categoryList.find(category => category.materials.includes(material));
 const getGresFormula = (material) => gresMaterials.find(item => item.name === material)?.formula || '';
 const getUnitOptions = (categoryName) => liquidCategories.has(categoryName) ? unitOptions.liquid : unitOptions.dry;
 const getBaseUnit = (categoryName) => liquidCategories.has(categoryName) ? 'ml' : 'g';
@@ -132,6 +134,14 @@ const formatCalculatedAmount = (value, unit) => {
 
 export default function App() {
   const [taller, setTaller] = useState('Posadas');
+  const [customMaterials, setCustomMaterials] = useState([]);
+  const [materialError, setMaterialError] = useState('');
+  const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [newMaterialCategory, setNewMaterialCategory] = useState('');
+  const [newMaterialName, setNewMaterialName] = useState('');
+  const [newMaterialAmount, setNewMaterialAmount] = useState('');
+  const [newMaterialUnit, setNewMaterialUnit] = useState('g');
+  const [isSavingMaterial, setIsSavingMaterial] = useState(false);
   const [inventory, setInventory] = useState(() => {
     const initial = {};
     ['Posadas', 'Oberá'].forEach(loc => {
@@ -174,10 +184,41 @@ export default function App() {
   const [calculatorUnit, setCalculatorUnit] = useState('kg');
   const [calculatorRows, setCalculatorRows] = useState([{ ingredient: '', percentage: '' }]);
 
-  const selectedCategory = getCategoryForMaterial(selectedMat);
+  const allCategories = categories.map(category => ({
+    ...category,
+    materials: [...category.materials, ...customMaterials.filter(material => material.categoryName === category.name).map(material => material.name)]
+  }));
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'materials'), snapshot => {
+      const nextMaterials = snapshot.docs.map(documentSnapshot => ({ id: documentSnapshot.id, ...documentSnapshot.data() }));
+      setCustomMaterials(nextMaterials);
+      setMaterialError('');
+      setInventory(currentInventory => {
+        const nextInventory = { ...currentInventory };
+        nextMaterials.forEach(material => {
+          const key = `${material.taller || 'Posadas'}-${material.name}`;
+          if (!nextInventory[key]) {
+            nextInventory[key] = {
+              stock: Number(material.initialStock) || 0,
+              unit: getBaseUnit(material.categoryName),
+              unitCostBase: 0
+            };
+          }
+        });
+        return nextInventory;
+      });
+    }, error => {
+      console.error('No se pudieron cargar los materiales de Firebase', error);
+      setMaterialError('No se pudieron sincronizar los materiales nuevos con Firebase.');
+    });
+    return unsubscribe;
+  }, []);
+
+  const selectedCategory = getCategoryForMaterial(selectedMat, allCategories);
   const selectedUnitOptions = getUnitOptions(selectedCategory?.name);
   const normalizedQuery = materialQuery.trim().toLocaleLowerCase();
-  const filteredCategories = categories.map(category => ({
+  const filteredCategories = allCategories.map(category => ({
     ...category,
     materials: category.materials.filter(material => material.toLocaleLowerCase().includes(normalizedQuery))
   })).filter(category => category.materials.length > 0);
@@ -185,7 +226,7 @@ export default function App() {
   const requireAdministrator = () => true;
 
   const recordMovement = (material, movement, value, movementUnit, movementResponsible, movementDestination, movementCost) => {
-    const category = getCategoryForMaterial(material);
+    const category = getCategoryForMaterial(material, allCategories);
     const valueInBase = toBaseUnits(value, movementUnit);
     const costInBase = toBaseCost(movementCost);
     if (!category || !Number.isFinite(valueInBase) || valueInBase <= 0) return false;
@@ -279,7 +320,7 @@ export default function App() {
     setSelectedMat(value);
     setMaterialQuery(value);
     setIsMaterialListOpen(false);
-    const category = getCategoryForMaterial(value);
+    const category = getCategoryForMaterial(value, allCategories);
     setUnit(getUnitOptions(category?.name)[0]);
   };
 
@@ -373,6 +414,56 @@ export default function App() {
     });
   };
 
+  const openMaterialModal = (categoryName) => {
+    if (!requireAdministrator()) return;
+    setNewMaterialCategory(categoryName);
+    setNewMaterialName('');
+    setNewMaterialAmount('');
+    setNewMaterialUnit(getUnitOptions(categoryName)[0]);
+    setMaterialError('');
+    setIsMaterialModalOpen(true);
+  };
+
+  const closeMaterialModal = () => {
+    if (isSavingMaterial) return;
+    setIsMaterialModalOpen(false);
+    setMaterialError('');
+  };
+
+  const handleNewMaterialSubmit = async (event) => {
+    event.preventDefault();
+    const materialName = newMaterialName.trim();
+    const amountValue = Number(newMaterialAmount);
+    const category = allCategories.find(item => item.name === newMaterialCategory);
+    if (!category || !materialName || !Number.isFinite(amountValue) || amountValue < 0) {
+      setMaterialError('Completa el nombre y una cantidad válida.');
+      return;
+    }
+    if (category.materials.some(material => material.toLocaleLowerCase() === materialName.toLocaleLowerCase())) {
+      setMaterialError('Ya existe un material con ese nombre en esta categoría.');
+      return;
+    }
+
+    setIsSavingMaterial(true);
+    setMaterialError('');
+    try {
+      await addDoc(collection(db, 'materials'), {
+        name: materialName,
+        categoryName: newMaterialCategory,
+        initialStock: toBaseUnits(amountValue, newMaterialUnit),
+        initialUnit: newMaterialUnit,
+        taller,
+        createdAt: serverTimestamp()
+      });
+      setIsMaterialModalOpen(false);
+    } catch (error) {
+      console.error('No se pudo guardar el material en Firebase', error);
+      setMaterialError('No se pudo guardar el material. Revisa la conexión y los permisos de Firebase.');
+    } finally {
+      setIsSavingMaterial(false);
+    }
+  };
+
   const calculatorTrials = Object.entries(labTrials).flatMap(([type, trials]) => trials.map(trial => ({ ...trial, type })));
   const handleCalculatorFormulaChange = (value) => {
     setCalculatorFormula(value);
@@ -421,7 +512,7 @@ export default function App() {
   };
 
   const exportInventory = () => {
-    const rows = categories.flatMap(category => category.materials.map(material => {
+    const rows = allCategories.flatMap(category => category.materials.map(material => {
       const stock = inventory[`${taller}-${material}`]?.stock || 0;
       return [taller, category.name, material, stock, getBaseUnit(category.name), formatStock(stock, category.name)];
     }));
@@ -584,6 +675,36 @@ export default function App() {
         </form>
       </div>}
 
+      {isMaterialModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
+        <form onSubmit={handleNewMaterialSubmit} className="w-full max-w-md rounded-2xl border border-[#C85A32] bg-[#2D2420] p-6 text-[#F4ECE1] shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="new-material-title">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#D49758]">Nuevo material</p>
+              <h2 id="new-material-title" className="mt-1 text-xl font-bold">Agregar a {newMaterialCategory}</h2>
+            </div>
+            <button type="button" onClick={closeMaterialModal} aria-label="Cerrar formulario" className="rounded-lg p-2 hover:bg-white/10"><X size={18} /></button>
+          </div>
+          <label className="text-sm font-semibold">Nombre o código
+            <input autoFocus type="text" value={newMaterialName} onChange={event => setNewMaterialName(event.target.value)} placeholder="Ej. Pigmento nuevo" className="mt-1 w-full rounded-lg bg-[#1F1815] p-3 outline-none ring-1 ring-white/10 focus:ring-[#C85A32]" />
+          </label>
+          <div className="mt-4 grid grid-cols-[1fr_auto] gap-3">
+            <label className="text-sm font-semibold">Cantidad inicial
+              <input type="number" min="0" step="any" value={newMaterialAmount} onChange={event => setNewMaterialAmount(event.target.value)} placeholder="0" className="mt-1 w-full rounded-lg bg-[#1F1815] p-3 outline-none ring-1 ring-white/10 focus:ring-[#C85A32]" />
+            </label>
+            <label className="text-sm font-semibold">Unidad
+              <select value={newMaterialUnit} onChange={event => setNewMaterialUnit(event.target.value)} className="mt-1 rounded-lg bg-[#1F1815] p-3 outline-none ring-1 ring-white/10 focus:ring-[#C85A32]">
+                {getUnitOptions(newMaterialCategory).map(option => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-[#C9B9AC]">Stock inicial para Taller {taller}. Se guardará en la colección de materiales de Firebase.</p>
+          {materialError && <p className="mt-3 rounded-lg bg-red-950/50 p-3 text-sm font-semibold text-red-200" role="alert">{materialError}</p>}
+          <button type="submit" disabled={isSavingMaterial} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#C85A32] p-3 font-bold text-white hover:bg-[#A94728] disabled:cursor-wait disabled:opacity-60">
+            <Plus size={17} /> {isSavingMaterial ? 'Guardando...' : 'Guardar material'}
+          </button>
+        </form>
+      </div>}
+
       <section className="artisanal-panel tool-panel order-3 max-w-7xl mx-auto mb-8 w-full rounded-2xl p-5" aria-labelledby="laboratorio-gres-title">
         <div className={`flex items-center justify-between gap-3 ${isLabOpen ? 'mb-6 border-b border-[#b98256]/40 pb-5' : ''}`}>
           <h2 id="laboratorio-gres-title" className="flex items-center gap-2 font-serif text-xl font-bold text-[#f4dfc2]"><FlaskConical size={21} /> LABORATORIO</h2>
@@ -725,7 +846,7 @@ export default function App() {
       </section>}
 
       <main key={taller} className="order-1 mx-auto w-full max-w-[1500px] grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 items-start gap-5 px-0 md:px-2" aria-label={`Inventario y métricas de Taller ${taller}`}>
-        {categories.map((category) => {
+        {allCategories.map((category) => {
           const categoryStock = category.materials.reduce((total, material) => total + (inventory[`${taller}-${material}`]?.stock || 0), 0);
           const categoryValue = category.materials.reduce((total, material) => {
             const materialInventory = inventory[`${taller}-${material}`];
@@ -754,6 +875,9 @@ export default function App() {
                   {lowStockCount > 0 && <p className="low-stock-alert flex items-center gap-1 text-sm font-bold mt-1 text-red-700"><AlertTriangle size={14} /> {lowStockCount} bajo mínimo</p>}
                 </div>
                 <span className="accordion-chevron ml-auto shrink-0 text-lg font-bold" aria-hidden="true">{isCategoryOpen ? '▲' : '▼'}</span>
+              </button>
+              <button type="button" onClick={() => openMaterialModal(category.name)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-[#D49758]/70 px-3 py-2 text-sm font-bold text-[#F4DFC2] transition hover:bg-[#C85A32] hover:text-white">
+                <Plus size={16} /> Agregar material
               </button>
               {isCategoryOpen && <div id={`category-${category.name}`} className="mt-4 border-t border-current/20 pt-2">
                 {category.materials.map(material => {
