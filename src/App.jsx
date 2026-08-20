@@ -432,7 +432,10 @@ export default function App() {
 
   const handleDeleteMaterial = async (material) => {
     const customMaterial = customMaterials.find(item => item.name === material);
-    if (!customMaterial?.id) return;
+    if (!customMaterial?.id) {
+      setMaterialError('Este material pertenece al catálogo base y no se puede eliminar desde Firebase.');
+      return;
+    }
     if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
 
     try {
@@ -924,7 +927,9 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? `Volumen: ${formatStock(materialStock, category.name)}` : formatStock(materialStock, category.name)}</span>
-                      {isCustomMaterial && <button type="button" onClick={() => handleDeleteMaterial(material)} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-red-200 transition hover:bg-red-700 hover:text-white" aria-label={`Eliminar material ${material}`} title="Eliminar material"><Trash2 size={14} /> Eliminar</button>}
+                      <button type="button" onClick={() => handleDeleteMaterial(material)} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition ${isCustomMaterial ? 'text-red-200 hover:bg-red-700 hover:text-white' : 'cursor-not-allowed text-red-200/40'}`} aria-label={`Eliminar material ${material}`} title={isCustomMaterial ? 'Eliminar material' : 'Material del catálogo base protegido'}>
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                     </div>
                     {category.name === gresCategoryName && <>
