@@ -2,8 +2,13 @@
 
 :root {
 	font-family: 'Quicksand', sans-serif;
-	color: #201611;
-	background: #2a1b16;
+	--ceramic-charcoal: #241714;
+	--ceramic-brown: #3e261b;
+	--ceramic-clay: #b96f48;
+	--ceramic-terracotta: #b96542;
+	--ceramic-cream: #f5eadd;
+	color: var(--ceramic-cream);
+	background: var(--ceramic-charcoal);
 	font-synthesis: none;
 	text-rendering: optimizeLegibility;
 }
@@ -65,8 +70,13 @@ button,
 }
 
 .accordion-chevron {
-	color: #3b2418 !important;
+	color: #f5eadd !important;
 	font-weight: 800;
+}
+
+.history-chevron,
+.dark-chevron {
+	color: #3b2418 !important;
 }
 
 .tool-panel label,
@@ -112,9 +122,9 @@ button,
 }
 
 .artisanal-card {
-	border-color: #b98256 !important;
-	background: rgba(62, 38, 27, 0.94) !important;
-	color: #f8eee1 !important;
+	border-color: #f5eadd !important;
+	background: var(--ceramic-brown) !important;
+	color: var(--ceramic-cream) !important;
 	box-shadow: 0 10px 22px rgba(28, 14, 8, 0.12), 0 2px 8px rgba(28, 14, 8, 0.08);
 	border-width: 1px !important;
 	animation: card-arrive 0.55s ease both;
@@ -127,7 +137,7 @@ button,
 }
 
 .artisanal-card .category-ring {
-	color: #a95335;
+	color: #f5eadd;
 	stroke-dashoffset: 100;
 	animation: ring-fill 1.1s ease-out forwards;
 }

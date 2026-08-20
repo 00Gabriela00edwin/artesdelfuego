@@ -31,42 +31,42 @@ const gresMaterials = [
 const categories = [
   {
     name: "MATERIALES SECOS",
-    bgClass: "bg-[#E8F5E9] border-[#A5D6A7]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["OX ZINC", "OX ESTAÑO", "ARENA DE RUTILO", "SILICATO ZIRCONIO", "COLEMANITA", "Carbonato de calcio", "DOLOMITA AUKAN", "CHAMOTE 30#", "FELDESPATO", "CUARZO", "WOLLASTONITA", "SIENITA NEFELINA", "ESPODUMENO", "BASALTO", "TALCO", "FOSFATO TRICALCICO", "CARBONATO DE ESTRONCIO", "CARBONATO DE BARIO", "CARBONATO DE MAGNESIO", "OXIDO DE ALUMINIO"]
   },
   {
     name: "OXIDOS COLORANTES",
-    bgClass: "bg-[#E3F2FD] border-[#90CAF9]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["OX NIQUEL", "OX CROMO", "OX COBRE", "OX MANGANESO", "OX HIERRO", "OX DE COBALTO"]
   },
   {
     name: "ARCILLAS",
-    bgClass: "bg-[#EDE7F6] border-[#D1C4E9]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["APM 112", "TINCAR Z", "AUKAN ROJA", "AUKAN MARRON", "AUKAN OCRE", "PUMA", "CAOLIN SRB", "CAOLIN PATAGONICO", "BENTONITA", "CONO 28 XXX", "PASTA CHILAVERT", "YESO"]
   },
   {
     name: "DESFLOCULANTE",
-    bgClass: "bg-[#E0F2F1] border-[#80CBC4]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["CARB SODIO", "TRIPOLISFOSFATO DE SODIO"]
   },
   {
     name: "FUNDENTES",
-    bgClass: "bg-[#FFF3E0] border-[#FFE0B2]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["F 174", "BASE 804", "Q 92", "BORAX", "FLUX 12005"]
   },
   {
     name: "ESMALTES EN POLVO BAJA",
-    bgClass: "bg-[#FBE9E7] border-[#FFCCBC]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["JASPEADO", "ROJO SELENIO", "TURQUEZA", "RUBY", "MARRON", "AMARILLO", "NARANJA", "BLANCO", "ROSA", "NEGRO", "GRIS", "VERDE", "VIOLETA", "AZUL", "ROJO", "RS"]
   },
   {
     name: "ESMALTES DE GRES",
-    bgClass: "bg-[#FFFDE7] border-[#FFF59D]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: gresMaterials.map(material => material.name)
   },
   {
     name: "PIGMENTOS B/C",
-    bgClass: "bg-[#FCE4EC] border-[#F8BBD0]",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["AZ 63", "AZ 60", "AZ64", "NG13", "NG10", "MR21", "MR20", "MR55", "RJ30", "RJ38", "RJ39", "RJ36", "RS32", "LI34", "GR12", "AM56", "verde40", "verde41", "naranja55"]
   }
 ];
@@ -113,8 +113,11 @@ const downloadCsv = (filename, headers, rows) => {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 const parseFormula = (composition) => composition.split(/[·,\n]+/).map(part => {
   const match = part.trim().match(/^(.+?)\s+(\d+(?:[.,]\d+)?)\s*%$/);
@@ -149,6 +152,7 @@ export default function App() {
   const [unit, setUnit] = useState('g');
   const [quickMovePin, setQuickMovePin] = useState('');
   const [isQuickMovePinOpen, setIsQuickMovePinOpen] = useState(false);
+  const [isQuickMoveAuthorized, setIsQuickMoveAuthorized] = useState(false);
   const [quickMovePinError, setQuickMovePinError] = useState('');
   const [pendingQuickMoveAction, setPendingQuickMoveAction] = useState(null);
   const [responsible, setResponsible] = useState('');
@@ -253,6 +257,7 @@ export default function App() {
   const handleQuickMovePinSubmit = (e) => {
     e.preventDefault();
     if (quickMovePin === '2026') {
+      setIsQuickMoveAuthorized(true);
       finalizeQuickMove();
       return;
     }
@@ -260,6 +265,11 @@ export default function App() {
   };
 
   const openQuickMovePin = (action) => {
+    if (isQuickMoveAuthorized) {
+      handleMovement({ preventDefault: () => {} }, action);
+      setPendingQuickMoveAction(null);
+      return;
+    }
     setPendingQuickMoveAction(action);
     setIsQuickMovePinOpen(true);
     setQuickMovePinError('');
@@ -433,6 +443,23 @@ export default function App() {
     downloadCsv('historial-movimientos.csv', ['Fecha', 'Hora', 'Taller', 'Material', 'Tipo', 'Cantidad base', 'Cantidad registrada', 'Responsable', 'Destino'], rows);
   };
 
+  const exportLabTrials = () => {
+    const rows = activeLabTrials.map(trial => [
+      labTabLabels[activeLabTab],
+      trial.name,
+      trial.date,
+      trial.resultDate || '',
+      trial.addedBy || '',
+      trial.composition || '',
+      trial.shrinkage || '',
+      trial.density || '',
+      trial.firing || '',
+      trial.observations || '',
+      trial.imageName || ''
+    ]);
+    downloadCsv(`ensayos-${activeLabTab}.csv`, ['Tipo', 'Nombre del ensayo', 'Fecha de elaboración', 'Fecha de resultado', 'Agregado por', 'Composición', 'Contracción (%)', 'Densidad (g/ml)', 'Quema', 'Observaciones', 'Archivo de imagen'], rows);
+  };
+
   const activeLabForm = labForms[activeLabTab];
   const activeLabTrials = labTrials[activeLabTab];
   const labTabLabels = { pastas: 'Pastas', barbotinas: 'Barbotinas', esmaltes: 'Esmaltes' };
@@ -561,13 +588,14 @@ export default function App() {
         <div className={`flex items-center justify-between gap-3 ${isLabOpen ? 'mb-6 border-b border-[#b98256]/40 pb-5' : ''}`}>
           <h2 id="laboratorio-gres-title" className="flex items-center gap-2 font-serif text-xl font-bold text-[#f4dfc2]"><FlaskConical size={21} /> LABORATORIO</h2>
           <button type="button" onClick={handleLabToggle} aria-expanded={isLabOpen} aria-controls="laboratorio-gres-content" aria-label={isLabOpen ? 'Cerrar laboratorio' : 'Abrir laboratorio'} className="rounded-lg border border-[#d49758] px-3 py-2 text-sm font-bold text-[#f4dfc2] hover:bg-[#b96542] hover:text-white">
-            <span className="accordion-chevron" aria-hidden="true">{isLabOpen ? '▲' : '▼'}</span>
+            <span className="accordion-chevron dark-chevron" aria-hidden="true">{isLabOpen ? '▲' : '▼'}</span>
           </button>
         </div>
 
         {isLabOpen && <div id="laboratorio-gres-content">
         <div className="mb-5 flex flex-wrap gap-2 border-b border-[#b98256]/40 pb-4" role="tablist" aria-label="Secciones del laboratorio">
           {Object.entries(labTabLabels).map(([tab, label]) => <button key={tab} type="button" role="tab" aria-selected={activeLabTab === tab} onClick={() => setActiveLabTab(tab)} className={`rounded-lg px-4 py-2 text-sm font-bold ${activeLabTab === tab ? 'bg-[#b96542] text-white' : 'bg-[#241714] text-[#e1c2a1] hover:bg-[#70402e]'}`}>{label}</button>)}
+          <button type="button" onClick={exportLabTrials} disabled={activeLabTrials.length === 0} aria-label="Descargar ensayos en Excel" title="Descargar ensayos en Excel" className="ml-auto flex h-10 w-10 items-center justify-center rounded-lg border border-[#3b2418] text-[#3b2418] hover:bg-[#b96542] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"><Download size={18} /></button>
         </div>
         <p className="mb-4 text-sm font-semibold text-[#d8b99a]">Registro independiente de {labTabLabels[activeLabTab].toLowerCase()}</p>
         <form onSubmit={handleLabSubmit} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -603,7 +631,7 @@ export default function App() {
           </label>
           <div className="text-sm font-semibold text-[#f4dfc2]">Foto de la prueba
             <input id="lab-image-file" type="file" accept="image/*" onChange={handleLabImageChange} className="sr-only" />
-            <label htmlFor="lab-image-file" className="mt-1 flex cursor-pointer items-center justify-center rounded-lg bg-[#b96542] p-3 text-sm font-semibold text-white hover:bg-[#a95335]">Seleccionar archivo</label>
+            <label htmlFor="lab-image-file" className="mt-1 flex cursor-pointer items-center justify-center rounded-lg bg-[#b96542] p-3 text-sm font-semibold text-white hover:bg-[#a95335]">Seleccionar foto</label>
             {activeLabForm.imageName && <span className="mt-1 block text-xs text-[#d8b99a]">Archivo: {activeLabForm.imageName}</span>}
             {!activeLabForm.imageName && <span className="mt-1 block text-xs text-[#d8b99a]">Ningún archivo seleccionado</span>}
           </div>
@@ -709,11 +737,11 @@ export default function App() {
           const lowStockCount = category.materials.filter(material => (inventory[`${taller}-${material}`]?.stock || 0) < minimumStock).length;
           const isCategoryOpen = openCategories.has(category.name);
           return (
-            <section key={category.name} className={`artisanal-card ${isCategoryOpen ? 'md:col-span-2 xl:col-span-2' : ''} p-5 rounded-2xl border text-[#111111] ${category.bgClass}`}>
+            <section key={category.name} className={`artisanal-card ${isCategoryOpen ? 'md:col-span-2 xl:col-span-2' : ''} p-5 rounded-2xl border text-[#f5eadd] ${category.bgClass}`}>
               <button type="button" onClick={() => handleCategoryToggle(category.name)} aria-expanded={isCategoryOpen} aria-controls={`category-${category.name}`} className="flex w-full items-center gap-4 text-left">
                 <div className="relative w-16 h-16 shrink-0" role="img" aria-label={`${category.name}: ${categoryPercentage}% de stock`}>
                   <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
-                    <path className="text-black/10" stroke="currentColor" strokeWidth="4" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    <path className="text-white/20" stroke="currentColor" strokeWidth="4" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                     <path className="category-ring" stroke="currentColor" strokeWidth="4" strokeLinecap="round" fill="none" strokeDasharray={`${categoryProgress}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                   </svg>
                   <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{categoryPercentage}%</span>
@@ -742,7 +770,7 @@ export default function App() {
                     <div className="min-w-0">
                       <span className="block truncate font-semibold">{material}</span>
                       {category.name === gresCategoryName && <span className="mt-0.5 block truncate text-[11px] opacity-75" title={formula}>Fórmula: {formula}</span>}
-                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-black/15" role="progressbar" aria-label={`Stock de ${material}`} aria-valuenow={materialProgress} aria-valuemin="0" aria-valuemax="100">
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/20" role="progressbar" aria-label={`Stock de ${material}`} aria-valuenow={materialProgress} aria-valuemin="0" aria-valuemax="100">
                         <div className={`progress-fill h-full rounded-full ${progressColor}`} style={{ width: `${materialProgress}%` }} />
                       </div>
                     </div>
@@ -769,10 +797,10 @@ export default function App() {
           <h2 id="historial-title" className="flex items-center gap-2 font-serif text-xl font-bold"><Clock size={20} /> HISTORIAL DE MOVIMIENTOS</h2>
           <div className="flex items-center gap-2">
             {isHistoryOpen && <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={exportInventory} className="flex items-center gap-2 rounded-lg border border-[#b98256] px-3 py-2 text-sm font-bold hover:bg-[#b96542] hover:text-white"><Download size={16} /> Exportar inventario</button>
-              <button type="button" onClick={exportHistory} className="flex items-center gap-2 rounded-lg border border-[#b98256] px-3 py-2 text-sm font-bold hover:bg-[#b96542] hover:text-white"><Download size={16} /> Exportar historial</button>
+              <button type="button" onClick={exportInventory} className="flex items-center gap-2 rounded-lg border border-[#3b2418] px-3 py-2 text-sm font-bold text-[#3b2418] hover:bg-[#b96542] hover:text-white"><Download size={16} /> Exportar inventario</button>
+              <button type="button" onClick={exportHistory} className="flex items-center gap-2 rounded-lg border border-[#3b2418] px-3 py-2 text-sm font-bold text-[#3b2418] hover:bg-[#b96542] hover:text-white"><Download size={16} /> Exportar historial</button>
             </div>}
-            <button type="button" onClick={handleHistoryToggle} aria-expanded={isHistoryOpen} aria-controls="historial-content" aria-label={isHistoryOpen ? 'Cerrar historial' : 'Abrir historial'} className="rounded-lg border border-[#d49758] px-3 py-2 text-sm font-bold hover:bg-[#b96542] hover:text-white"><span className="accordion-chevron" aria-hidden="true">{isHistoryOpen ? '▲' : '▼'}</span></button>
+            <button type="button" onClick={handleHistoryToggle} aria-expanded={isHistoryOpen} aria-controls="historial-content" aria-label={isHistoryOpen ? 'Cerrar historial' : 'Abrir historial'} className="rounded-lg border border-[#d49758] px-3 py-2 text-sm font-bold hover:bg-[#b96542] hover:text-white"><span className="accordion-chevron history-chevron" aria-hidden="true">{isHistoryOpen ? '▲' : '▼'}</span></button>
           </div>
         </div>
         {isHistoryOpen && <div id="historial-content">
@@ -801,7 +829,7 @@ export default function App() {
       </button>
       <footer className="order-4 mx-auto mt-8 max-w-7xl pb-4 text-center text-sm font-semibold text-[#F4DFC2]">
         <div className="mx-auto mb-3 h-px w-24 bg-[#D49758]" aria-hidden="true" />
-        <p>Desarrollo Web - Oficina Artes del Fuego</p>
+        <p>Oficina Artes del Fuego</p>
         <p className="mt-1">Posadas Misiones 2026</p>
       </footer>
     </div>
