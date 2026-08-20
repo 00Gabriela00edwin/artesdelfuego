@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus } from 'lucide-react';
 import { auth, db } from './firebase';
 
@@ -132,6 +132,7 @@ const formatCalculatedAmount = (value, unit) => {
   if (unit === 'g' || unit === 'ml') return `${value.toFixed(2).replace(/\.00$/, '')} ${unit}`;
   return `${value.toFixed(3)} ${unit}`;
 };
+const getInventoryDocumentId = (taller, material) => encodeURIComponent(`${taller}::${material}`);
 
 export default function App() {
   const [taller, setTaller] = useState('Posadas');
@@ -145,6 +146,11 @@ export default function App() {
   const [newMaterialUnit, setNewMaterialUnit] = useState('g');
   const [isSavingMaterial, setIsSavingMaterial] = useState(false);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+  const [quickAdjustment, setQuickAdjustment] = useState(null);
+  const [quickAdjustmentAmount, setQuickAdjustmentAmount] = useState('');
+  const [quickAdjustmentUnit, setQuickAdjustmentUnit] = useState('g');
+  const [isSavingAdjustment, setIsSavingAdjustment] = useState(false);
+  const [quickAdjustmentError, setQuickAdjustmentError] = useState('');
   const [inventory, setInventory] = useState(() => {
     const initial = {};
     ['Posadas', 'Oberá'].forEach(loc => {
@@ -226,9 +232,28 @@ export default function App() {
       console.error('No se pudieron cargar los materiales de Firebase', error);
       setMaterialError('No se pudieron sincronizar los materiales nuevos con Firebase.');
     });
+    const unsubscribeInventory = onSnapshot(collection(db, 'inventory'), snapshot => {
+      setInventory(currentInventory => {
+        const nextInventory = { ...currentInventory };
+        snapshot.docs.forEach(documentSnapshot => {
+          const data = documentSnapshot.data();
+          if (!data.taller || !data.material) return;
+          nextInventory[`${data.taller}-${data.material}`] = {
+            ...nextInventory[`${data.taller}-${data.material}`],
+            stock: Number(data.stock) || 0,
+            unit: data.unit || getBaseUnit(data.categoryName)
+          };
+        });
+        return nextInventory;
+      });
+    }, error => {
+      console.error('[Firebase] No se pudo sincronizar la colección "inventory"', error);
+      setMaterialError('No se pudo sincronizar el inventario con Firebase.');
+    });
     return () => {
       unsubscribeAuth();
       unsubscribe();
+      unsubscribeInventory();
     };
   }, []);
 
@@ -431,6 +456,88 @@ export default function App() {
     });
   };
 
+  const openQuickAdjustment = (material, categoryName, action) => {
+    if (!requireAdministrator()) return;
+    setQuickAdjustment({ material, categoryName, action });
+    setQuickAdjustmentAmount('');
+    setQuickAdjustmentUnit(getUnitOptions(categoryName)[0]);
+    setQuickAdjustmentError('');
+  };
+
+  const closeQuickAdjustment = () => {
+    if (isSavingAdjustment) return;
+    setQuickAdjustment(null);
+    setQuickAdjustmentError('');
+  };
+
+  const handleQuickAdjustmentSubmit = async (event) => {
+    event.preventDefault();
+    if (!quickAdjustment || !isFirebaseReady) {
+      setQuickAdjustmentError('Firebase todavía está conectando. Intenta nuevamente en unos segundos.');
+      return;
+    }
+    const amountValue = Number(quickAdjustmentAmount);
+    const amountInBase = toBaseUnits(amountValue, quickAdjustmentUnit);
+    if (!Number.isFinite(amountInBase) || amountInBase <= 0) {
+      setQuickAdjustmentError('Ingresa una cantidad mayor que cero.');
+      return;
+    }
+
+    const { material, categoryName, action } = quickAdjustment;
+    const inventoryKey = `${taller}-${material}`;
+    const inventoryRef = doc(db, 'inventory', getInventoryDocumentId(taller, material));
+    setIsSavingAdjustment(true);
+    setQuickAdjustmentError('');
+    try {
+      let nextStock = 0;
+      await runTransaction(db, async transaction => {
+        const inventorySnapshot = await transaction.get(inventoryRef);
+        const currentStock = Number(inventorySnapshot.data()?.stock ?? inventory[inventoryKey]?.stock ?? 0);
+        nextStock = action === 'add' ? currentStock + amountInBase : Math.max(0, currentStock - amountInBase);
+        transaction.set(inventoryRef, {
+          taller,
+          material,
+          categoryName,
+          stock: nextStock,
+          unit: getBaseUnit(categoryName),
+          updatedAt: new Date()
+        }, { merge: true });
+      });
+      setInventory(currentInventory => ({
+        ...currentInventory,
+        [inventoryKey]: { ...currentInventory[inventoryKey], stock: nextStock, unit: getBaseUnit(categoryName) }
+      }));
+      const now = new Date();
+      setHistory(currentHistory => [{
+        id: Date.now() + Math.random(),
+        date: now.toLocaleDateString(),
+        time: now.toLocaleTimeString(),
+        taller,
+        material,
+        type: action === 'add' ? 'entrada' : 'salida',
+        responsible: '',
+        destination: 'Ajuste rápido',
+        amountVal: amountInBase,
+        amountFormatted: `${amountValue} ${quickAdjustmentUnit}`
+      }, ...currentHistory]);
+      setQuickAdjustment(null);
+    } catch (error) {
+      console.error('[Firebase] No se pudo actualizar el stock', {
+        code: error?.code || 'sin código',
+        message: error?.message || String(error),
+        collection: 'inventory',
+        material,
+        taller,
+        action,
+        amount: amountValue,
+        unit: quickAdjustmentUnit
+      });
+      setQuickAdjustmentError('No se pudo actualizar el stock. Revisa los permisos de Firebase.');
+    } finally {
+      setIsSavingAdjustment(false);
+    }
+  };
+
   const openMaterialModal = (categoryName) => {
     if (!requireAdministrator()) return;
     setNewMaterialCategory(categoryName);
@@ -506,6 +613,19 @@ export default function App() {
     try {
       console.info('[Firebase] Guardando material en la colección "materials"', materialData);
       await addDoc(collection(db, 'materials'), materialData);
+      const now = new Date();
+      setHistory(currentHistory => [{
+        id: Date.now() + Math.random(),
+        date: now.toLocaleDateString(),
+        time: now.toLocaleTimeString(),
+        taller,
+        material: materialName,
+        type: 'entrada',
+        responsible: '',
+        destination: 'Material nuevo',
+        amountVal: materialData.initialStock,
+        amountFormatted: `${amountValue} ${newMaterialUnit}`
+      }, ...currentHistory]);
       setIsMaterialModalOpen(false);
     } catch (error) {
       console.error('[Firebase] No se pudo guardar el material', {
@@ -764,6 +884,33 @@ export default function App() {
         </form>
       </div>}
 
+      {quickAdjustment && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
+        <form onSubmit={handleQuickAdjustmentSubmit} className="w-full max-w-sm rounded-2xl border border-[#C85A32] bg-[#2D2420] p-6 text-[#F4ECE1] shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="quick-adjustment-title">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#D49758]">Ajuste rápido</p>
+              <h2 id="quick-adjustment-title" className="mt-1 text-xl font-bold">{quickAdjustment.action === 'add' ? 'Sumar' : 'Restar'}: {quickAdjustment.material}</h2>
+            </div>
+            <button type="button" onClick={closeQuickAdjustment} aria-label="Cerrar ajuste" className="rounded-lg p-2 hover:bg-white/10"><X size={18} /></button>
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-3">
+            <label className="text-sm font-semibold">Cantidad
+              <input autoFocus type="number" min="0" step="any" value={quickAdjustmentAmount} onChange={event => setQuickAdjustmentAmount(event.target.value)} placeholder="100" className="mt-1 w-full rounded-lg bg-[#1F1815] p-3 outline-none ring-1 ring-white/10 focus:ring-[#C85A32]" />
+            </label>
+            <label className="text-sm font-semibold">Unidad
+              <select value={quickAdjustmentUnit} onChange={event => setQuickAdjustmentUnit(event.target.value)} className="mt-1 rounded-lg bg-[#1F1815] p-3 outline-none ring-1 ring-white/10 focus:ring-[#C85A32]">
+                {getUnitOptions(quickAdjustment.categoryName).map(option => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-[#C9B9AC]">Se actualizará el stock de Taller {taller} en Firebase.</p>
+          {quickAdjustmentError && <p className="mt-3 rounded-lg bg-red-950/50 p-3 text-sm font-semibold text-red-200" role="alert">{quickAdjustmentError}</p>}
+          <button type="submit" disabled={isSavingAdjustment} className="mt-5 w-full rounded-lg bg-[#C85A32] p-3 font-bold text-white hover:bg-[#A94728] disabled:cursor-wait disabled:opacity-60">
+            {isSavingAdjustment ? 'Actualizando...' : 'Confirmar ajuste'}
+          </button>
+        </form>
+      </div>}
+
       <section className="artisanal-panel tool-panel order-3 max-w-7xl mx-auto mb-8 w-full rounded-2xl p-5" aria-labelledby="laboratorio-gres-title">
         <div className={`flex items-center justify-between gap-3 ${isLabOpen ? 'mb-6 border-b border-[#b98256]/40 pb-5' : ''}`}>
           <h2 id="laboratorio-gres-title" className="flex items-center gap-2 font-serif text-xl font-bold text-[#f4dfc2]"><FlaskConical size={21} /> LABORATORIO</h2>
@@ -959,6 +1106,8 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? `Volumen: ${formatStock(materialStock, category.name)}` : formatStock(materialStock, category.name)}</span>
+                      <button type="button" onClick={() => openQuickAdjustment(material, category.name, 'add')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-green-700 text-lg font-bold text-white transition hover:bg-green-600" aria-label={`Sumar stock a ${material}`} title="Sumar stock">+</button>
+                      <button type="button" onClick={() => openQuickAdjustment(material, category.name, 'subtract')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-700 text-lg font-bold text-white transition hover:bg-red-600" aria-label={`Restar stock de ${material}`} title="Restar stock">-</button>
                       <button type="button" onClick={() => handleDeleteMaterial(material, category.name)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-red-200 transition hover:bg-red-700 hover:text-white" aria-label={`Eliminar material ${material}`} title="Eliminar material">
                         <Trash2 size={14} />
                       </button>
