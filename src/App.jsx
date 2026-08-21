@@ -193,6 +193,7 @@ export default function App() {
   });
 
   const [history, setHistory] = useState([]);
+  const [selectedCategoryName, setSelectedCategoryName] = useState('');
   const [selectedMat, setSelectedMat] = useState('');
   const [materialQuery, setMaterialQuery] = useState('');
   const [isMaterialListOpen, setIsMaterialListOpen] = useState(false);
@@ -304,7 +305,7 @@ export default function App() {
   const selectedCategory = getCategoryForMaterial(selectedMat, allCategories);
   const selectedUnitOptions = getUnitOptions(selectedCategory?.name);
   const normalizedQuery = materialQuery.trim().toLocaleLowerCase();
-  const filteredCategories = allCategories.map(category => ({
+  const filteredCategories = allCategories.filter(category => category.name === selectedCategoryName).map(category => ({
     ...category,
     materials: category.materials.filter(material => material.toLocaleLowerCase().includes(normalizedQuery))
   })).filter(category => category.materials.length > 0);
@@ -417,7 +418,16 @@ export default function App() {
     setUnit(getUnitOptions(category?.name)[0]);
   };
 
+  const handleCategoryChange = (categoryName) => {
+    setSelectedCategoryName(categoryName);
+    setSelectedMat('');
+    setMaterialQuery('');
+    setIsMaterialListOpen(false);
+    setUnit(getUnitOptions(categoryName)[0]);
+  };
+
   const handleMaterialInput = (value) => {
+    if (!selectedCategoryName) return;
     setMaterialQuery(value);
     setSelectedMat('');
     setIsMaterialListOpen(true);
@@ -425,6 +435,7 @@ export default function App() {
 
   const handleBranchChange = (branch) => {
     setTaller(branch);
+    setSelectedCategoryName('');
     setSelectedMat('');
     setMaterialQuery('');
     setIsMaterialListOpen(false);
@@ -843,17 +854,24 @@ export default function App() {
           <Layers className="text-[#C85A32]" aria-hidden="true" />
         </div>
         <p className="mb-4 text-sm text-[#C9B9AC]" aria-live="polite">Inventario y métricas de <strong className="text-[#F4ECE1]">Taller {taller}</strong></p>
-        <form onSubmit={e => e.preventDefault()} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.3fr_0.7fr_0.7fr_0.9fr_0.9fr_0.9fr] gap-3 items-end">
+        <form onSubmit={e => e.preventDefault()} className="grid grid-cols-1 gap-3 items-end md:grid-cols-2 xl:grid-cols-[1fr_1.3fr_0.7fr_0.7fr_0.9fr_0.9fr_0.9fr]">
+          <label className="text-sm font-semibold">Categoría
+            <select value={selectedCategoryName} onChange={e => handleCategoryChange(e.target.value)} className="mt-1 min-h-12 w-full rounded-lg border border-white/10 bg-[#1F1815] p-3 outline-none focus:border-[#C85A32]">
+              <option value="">Seleccionar categoría</option>
+              {allCategories.map(category => <option key={category.name} value={category.name}>{category.name}</option>)}
+            </select>
+          </label>
           <label ref={materialSelectorRef} className="relative text-sm font-semibold">Material
             <input
               type="text"
               value={materialQuery}
-              placeholder="Buscar material..."
+              placeholder={selectedCategoryName ? 'Buscar material...' : 'Primero elige una categoría'}
               autoComplete="off"
+              disabled={!selectedCategoryName}
               role="combobox"
               aria-expanded={isMaterialListOpen}
               aria-controls="material-results"
-              onFocus={() => setIsMaterialListOpen(true)}
+              onFocus={() => selectedCategoryName && setIsMaterialListOpen(true)}
               onChange={e => handleMaterialInput(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Escape') setIsMaterialListOpen(false);
@@ -866,7 +884,7 @@ export default function App() {
             />
             {isMaterialListOpen && (
               <div id="material-results" role="listbox" className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-lg border border-[#C85A32] bg-[#1F1815] p-2 shadow-2xl">
-                {filteredCategories.length === 0 ? <p className="p-3 text-sm text-[#C9B9AC]">No se encontraron materiales.</p> : filteredCategories.map(category => (
+                {filteredCategories.length === 0 ? <p className="p-3 text-sm text-[#C9B9AC]">No se encontraron materiales en esta categoría.</p> : filteredCategories.map(category => (
                   <div key={category.name}>
                     <p className="px-3 pt-2 pb-1 text-xs font-bold uppercase tracking-wider text-[#C85A32]">{category.name}</p>
                     {category.materials.map(material => (
@@ -887,7 +905,7 @@ export default function App() {
               {selectedUnitOptions.map(option => <option key={option} value={option}>{option === 'L' ? 'Litros (L)' : option === 'ml' ? 'Mililitros (ml)' : option === 'kg' ? 'Kilos (kg)' : option === 'mg' ? 'Miligramos (mg)' : 'Gramos (g)'}</option>)}
             </select>
           </label>
-          <label className="text-sm font-semibold">Costo por {getCostUnit(selectedCategory?.name)} <span className="font-normal opacity-60">(opcional)</span>
+          <label className="text-sm font-semibold">Costo por {getCostUnit(selectedCategory?.name || selectedCategoryName)} <span className="font-normal opacity-60">(opcional)</span>
             <input type="number" min="0" step="0.01" placeholder="$ 0,00" value={unitCost} onChange={e => handleProtectedChange(setUnitCost, e.target.value)} className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg" />
           </label>
           <label className="text-sm font-semibold">Responsable <span className="font-normal opacity-60">(opcional)</span>
