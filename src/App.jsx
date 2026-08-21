@@ -196,6 +196,7 @@ export default function App() {
   const [selectedMat, setSelectedMat] = useState('');
   const [materialQuery, setMaterialQuery] = useState('');
   const [isMaterialListOpen, setIsMaterialListOpen] = useState(false);
+  const materialSelectorRef = useRef(null);
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState('g');
   const [quickMovePin, setQuickMovePin] = useState('');
@@ -286,6 +287,19 @@ export default function App() {
       unsubscribeInventory();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMaterialListOpen) return undefined;
+
+    const handleOutsidePointerDown = event => {
+      if (!materialSelectorRef.current?.contains(event.target)) {
+        setIsMaterialListOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [isMaterialListOpen]);
 
   const selectedCategory = getCategoryForMaterial(selectedMat, allCategories);
   const selectedUnitOptions = getUnitOptions(selectedCategory?.name);
@@ -830,7 +844,7 @@ export default function App() {
         </div>
         <p className="mb-4 text-sm text-[#C9B9AC]" aria-live="polite">Inventario y métricas de <strong className="text-[#F4ECE1]">Taller {taller}</strong></p>
         <form onSubmit={e => e.preventDefault()} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.3fr_0.7fr_0.7fr_0.9fr_0.9fr_0.9fr] gap-3 items-end">
-          <label className="relative text-sm font-semibold">Material
+          <label ref={materialSelectorRef} className="relative text-sm font-semibold">Material
             <input
               type="text"
               value={materialQuery}
