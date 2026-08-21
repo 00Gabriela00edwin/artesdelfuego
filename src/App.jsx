@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus } from 'lucide-react';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus, CheckCircle2 } from 'lucide-react';
 import { auth, db } from './firebase';
 
 const gresMaterials = [
@@ -134,6 +134,35 @@ const formatCalculatedAmount = (value, unit) => {
 };
 const getInventoryDocumentId = (taller, material) => encodeURIComponent(`${taller}::${material}`);
 
+const AnimatedStockValue = ({ value, categoryName }) => {
+  const [displayedValue, setDisplayedValue] = useState(value);
+  const displayedValueRef = useRef(value);
+
+  useEffect(() => {
+    const startValue = displayedValueRef.current;
+    const change = value - startValue;
+    if (change === 0) return undefined;
+
+    const duration = Math.min(900, Math.max(300, Math.abs(change) * 3));
+    let animationFrame;
+    let startTime;
+    const animate = timestamp => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      const nextValue = startValue + change * easedProgress;
+      displayedValueRef.current = nextValue;
+      setDisplayedValue(nextValue);
+      if (progress < 1) animationFrame = window.requestAnimationFrame(animate);
+    };
+
+    animationFrame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [value]);
+
+  return formatStock(displayedValue, categoryName);
+};
+
 export default function App() {
   const [taller, setTaller] = useState('Posadas');
   const [customMaterials, setCustomMaterials] = useState([]);
@@ -177,6 +206,7 @@ export default function App() {
   const [responsible, setResponsible] = useState('');
   const [destination, setDestination] = useState('');
   const [unitCost, setUnitCost] = useState('');
+  const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
   const [formulaDrafts, setFormulaDrafts] = useState({});
   const [openFormula, setOpenFormula] = useState('');
   const emptyLabForm = { name: '', date: new Date().toISOString().slice(0, 10), resultDate: '', addedBy: '', composition: '', shrinkage: '', density: '', firing: '', observations: '', imageUrl: '', imageName: '' };
@@ -302,8 +332,15 @@ export default function App() {
       amountVal: valueInBase,
       amountFormatted: `${value} ${movementUnit}`
     }, ...currentHistory]);
+    setShowRegistrationSuccess(true);
     return true;
   };
+
+  useEffect(() => {
+    if (!showRegistrationSuccess) return undefined;
+    const timeoutId = window.setTimeout(() => setShowRegistrationSuccess(false), 1800);
+    return () => window.clearTimeout(timeoutId);
+  }, [showRegistrationSuccess]);
 
   const handleMovement = (e, movement) => {
     e.preventDefault();
@@ -458,7 +495,11 @@ export default function App() {
 
   const openQuickAdjustment = (material, categoryName, action) => {
     if (!requireAdministrator()) return;
-    setQuickAdjustment({ id: getInventoryDocumentId(taller, material), material, categoryName, action });
+    setQuickAdjustment({
+      material: { id: getInventoryDocumentId(taller, material), name: material },
+      categoryName,
+      action
+    });
     setQuickAdjustmentAmount('');
     setQuickAdjustmentUnit(getUnitOptions(categoryName)[0]);
     setQuickAdjustmentError('');
@@ -483,12 +524,13 @@ export default function App() {
       return;
     }
 
-    const { id, material, categoryName, action } = quickAdjustment;
-    const inventoryKey = `${taller}-${material}`;
+    const { material, categoryName, action } = quickAdjustment;
+    const materialName = material.name;
+    const inventoryKey = `${taller}-${materialName}`;
     const collectionName = 'inventory';
-    if (!id || !material || !taller || !categoryName) {
+    if (!material?.id || !materialName || !taller || !categoryName) {
       console.error('[Firebase] ID o datos inválidos para actualizar el inventario', {
-        id,
+        id: material?.id,
         material,
         taller,
         categoryName,
@@ -497,20 +539,16 @@ export default function App() {
       setQuickAdjustmentError('No se pudo identificar el material para actualizarlo.');
       return;
     }
-    const inventoryRef = doc(db, collectionName, id);
+    const inventoryRef = doc(db, collectionName, material.id);
     setIsSavingAdjustment(true);
     setQuickAdjustmentError('');
     try {
-      console.log('[Firebase] Ajuste rápido antes de updateDoc', {
-        id,
-        collection: collectionName,
-        value: amountValue
-      });
+      console.log('ID del material:', material.id, 'Colección:', collectionName, 'Valor:', amountValue);
       console.info('[Firebase] Actualizando stock', {
         collection: collectionName,
-        documentPath: `${collectionName}/${id}`,
+        documentPath: `${collectionName}/${material.id}`,
         field: 'stock',
-        material,
+        material: materialName,
         taller,
         categoryName,
         action,
@@ -520,11 +558,11 @@ export default function App() {
       let nextStock = 0;
       const currentStock = Number(inventory[inventoryKey]?.stock ?? 0);
       nextStock = action === 'add' ? currentStock + amountInBase : Math.max(0, currentStock - amountInBase);
-      await updateDoc(inventoryRef, {
+      await setDoc(inventoryRef, {
         stock: nextStock,
         unit: getBaseUnit(categoryName),
         updatedAt: new Date()
-      });
+      }, { merge: true });
       setInventory(currentInventory => ({
         ...currentInventory,
         [inventoryKey]: { ...currentInventory[inventoryKey], stock: nextStock, unit: getBaseUnit(categoryName) }
@@ -535,7 +573,7 @@ export default function App() {
         date: now.toLocaleDateString(),
         time: now.toLocaleTimeString(),
         taller,
-        material,
+        material: materialName,
         type: action === 'add' ? 'entrada' : 'salida',
         responsible: '',
         destination: 'Ajuste rápido',
@@ -551,9 +589,9 @@ export default function App() {
         message: error?.message || String(error),
         stack: error?.stack || 'sin stack disponible',
         collection: 'inventory',
-        documentPath: `${collectionName}/${id}`,
+        documentPath: `${collectionName}/${material.id}`,
         field: 'stock',
-        material,
+        material: materialName,
         taller,
         action,
         amount: amountValue,
@@ -782,7 +820,7 @@ export default function App() {
         </nav>
       </header>
 
-      <section className="artisanal-panel max-w-7xl mx-auto mb-8 p-6 rounded-2xl">
+      <section className="artisanal-panel relative max-w-7xl mx-auto mb-8 p-6 rounded-2xl">
         <div className="flex items-center justify-between gap-4 mb-5">
           <div>
             <p className="text-xs uppercase tracking-widest text-[#C85A32] font-bold">Carga rápida</p>
@@ -863,6 +901,12 @@ export default function App() {
           <button type="button" onClick={() => openQuickMovePin('entrada')} className="rounded-lg bg-green-700 p-3 font-bold text-white hover:bg-green-800">Registrar entrada (+)</button>
           <button type="button" onClick={() => openQuickMovePin('salida')} className="rounded-lg bg-red-700 p-3 font-bold text-white hover:bg-red-800">Registrar salida (-)</button>
         </div>
+        {showRegistrationSuccess && <div className="registration-success absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-black/70 p-6 text-center backdrop-blur-sm" role="status" aria-live="assertive">
+          <div className="registration-success-content flex flex-col items-center gap-3">
+            <CheckCircle2 className="registration-success-icon" size={92} strokeWidth={2.5} aria-hidden="true" />
+            <strong className="text-3xl font-black tracking-widest text-[#b7ff3c]">¡REGISTRADO!</strong>
+          </div>
+        </div>}
       </section>
 
       {isQuickMovePinOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
@@ -916,7 +960,7 @@ export default function App() {
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-[#D49758]">Ajuste rápido</p>
-              <h2 id="quick-adjustment-title" className="mt-1 text-xl font-bold">{quickAdjustment.action === 'add' ? 'Sumar' : 'Restar'}: {quickAdjustment.material}</h2>
+              <h2 id="quick-adjustment-title" className="mt-1 text-xl font-bold">{quickAdjustment.action === 'add' ? 'Sumar' : 'Restar'}: {quickAdjustment.material.name}</h2>
             </div>
             <button type="button" onClick={closeQuickAdjustment} aria-label="Cerrar ajuste" className="rounded-lg p-2 hover:bg-white/10"><X size={18} /></button>
           </div>
@@ -1102,7 +1146,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="font-bold">{category.name}</h3>
-                  <p className="text-sm opacity-75">Total: {formatStock(categoryStock, category.name)}</p>
+                  <p className="text-sm opacity-75">Total: <AnimatedStockValue value={categoryStock} categoryName={category.name} /></p>
                   <p className="text-sm font-semibold mt-1">Valor disponible: {formatCurrency(categoryValue)}</p>
                   {category.name === gresCategoryName && <p className="text-sm font-semibold">Costo estimado de lotes: {formatCurrency(categoryValue)}</p>}
                   {lowStockCount > 0 && <p className="low-stock-alert flex items-center gap-1 text-sm font-bold mt-1 text-red-700"><AlertTriangle size={14} /> {lowStockCount} bajo mínimo</p>}
@@ -1128,13 +1172,11 @@ export default function App() {
                       <span className="block truncate font-semibold">{material}</span>
                       {category.name === gresCategoryName && <span className="mt-0.5 block truncate text-[11px] opacity-75" title={formula}>Fórmula: {formula}</span>}
                       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/20" role="progressbar" aria-label={`Stock de ${material}`} aria-valuenow={materialProgress} aria-valuemin="0" aria-valuemax="100">
-                        <div className={`progress-fill h-full rounded-full ${progressColor}`} style={{ width: `${materialProgress}%` }} />
+                        <div key={`${material}-${materialStock}`} className={`progress-fill h-full rounded-full ${progressColor}`} style={{ width: `${materialProgress}%` }} />
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? `Volumen: ${formatStock(materialStock, category.name)}` : formatStock(materialStock, category.name)}</span>
-                      <button type="button" onClick={() => openQuickAdjustment(material, category.name, 'add')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-green-700 text-lg font-bold text-white transition hover:bg-green-600" aria-label={`Sumar stock a ${material}`} title="Sumar stock">+</button>
-                      <button type="button" onClick={() => openQuickAdjustment(material, category.name, 'subtract')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-700 text-lg font-bold text-white transition hover:bg-red-600" aria-label={`Restar stock de ${material}`} title="Restar stock">-</button>
+                      <span className={`font-bold whitespace-nowrap ${isLowStock ? 'flex items-center gap-1 text-red-700' : ''}`}>{isLowStock && <AlertTriangle size={13} />}{category.name === gresCategoryName ? 'Volumen: ' : ''}<AnimatedStockValue value={materialStock} categoryName={category.name} /></span>
                       <button type="button" onClick={() => handleDeleteMaterial(material, category.name)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-red-200 transition hover:bg-red-700 hover:text-white" aria-label={`Eliminar material ${material}`} title="Eliminar material">
                         <Trash2 size={14} />
                       </button>
@@ -1171,7 +1213,7 @@ export default function App() {
         {history.length === 0 ? <p className="text-[#5a3827]">Todavía no hay movimientos registrados.</p> : history.map(movement => (
           <div key={movement.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 py-2 text-sm">
             <div>
-              <span>{movement.date} {movement.time} | {movement.taller} | {movement.material}</span>
+              <span className="flex items-center gap-2"><CheckCircle2 className="movement-check text-green-400" size={17} aria-label="Registro confirmado" />{movement.date} {movement.time} | {movement.taller} | {movement.material}</span>
               {(movement.responsible || movement.destination) && <p className="text-[#C9B9AC] mt-1">{movement.responsible && `Responsable: ${movement.responsible}`}{movement.responsible && movement.destination && ' | '}{movement.destination && `Destino: ${movement.destination}`}</p>}
             </div>
             <span className={movement.type === 'entrada' ? 'text-green-400' : 'text-red-400'}>{movement.type === 'entrada' ? '+' : '-'} {movement.amountFormatted}</span>
