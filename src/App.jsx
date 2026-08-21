@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus } from 'lucide-react';
 import { auth, db } from './firebase';
 
@@ -458,7 +458,7 @@ export default function App() {
 
   const openQuickAdjustment = (material, categoryName, action) => {
     if (!requireAdministrator()) return;
-    setQuickAdjustment({ material, categoryName, action });
+    setQuickAdjustment({ id: getInventoryDocumentId(taller, material), material, categoryName, action });
     setQuickAdjustmentAmount('');
     setQuickAdjustmentUnit(getUnitOptions(categoryName)[0]);
     setQuickAdjustmentError('');
@@ -483,25 +483,47 @@ export default function App() {
       return;
     }
 
-    const { material, categoryName, action } = quickAdjustment;
+    const { id, material, categoryName, action } = quickAdjustment;
     const inventoryKey = `${taller}-${material}`;
-    const inventoryRef = doc(db, 'inventory', getInventoryDocumentId(taller, material));
+    const collectionName = 'inventory';
+    if (!id || !material || !taller || !categoryName) {
+      console.error('[Firebase] ID o datos inválidos para actualizar el inventario', {
+        id,
+        material,
+        taller,
+        categoryName,
+        action
+      });
+      setQuickAdjustmentError('No se pudo identificar el material para actualizarlo.');
+      return;
+    }
+    const inventoryRef = doc(db, collectionName, id);
     setIsSavingAdjustment(true);
     setQuickAdjustmentError('');
     try {
+      console.log('[Firebase] Ajuste rápido antes de updateDoc', {
+        id,
+        collection: collectionName,
+        value: amountValue
+      });
+      console.info('[Firebase] Actualizando stock', {
+        collection: collectionName,
+        documentPath: `${collectionName}/${id}`,
+        field: 'stock',
+        material,
+        taller,
+        categoryName,
+        action,
+        amount: amountValue,
+        unit: quickAdjustmentUnit
+      });
       let nextStock = 0;
-      await runTransaction(db, async transaction => {
-        const inventorySnapshot = await transaction.get(inventoryRef);
-        const currentStock = Number(inventorySnapshot.data()?.stock ?? inventory[inventoryKey]?.stock ?? 0);
-        nextStock = action === 'add' ? currentStock + amountInBase : Math.max(0, currentStock - amountInBase);
-        transaction.set(inventoryRef, {
-          taller,
-          material,
-          categoryName,
-          stock: nextStock,
-          unit: getBaseUnit(categoryName),
-          updatedAt: new Date()
-        }, { merge: true });
+      const currentStock = Number(inventory[inventoryKey]?.stock ?? 0);
+      nextStock = action === 'add' ? currentStock + amountInBase : Math.max(0, currentStock - amountInBase);
+      await updateDoc(inventoryRef, {
+        stock: nextStock,
+        unit: getBaseUnit(categoryName),
+        updatedAt: new Date()
       });
       setInventory(currentInventory => ({
         ...currentInventory,
@@ -522,10 +544,15 @@ export default function App() {
       }, ...currentHistory]);
       setQuickAdjustment(null);
     } catch (error) {
+      console.error(error);
       console.error('[Firebase] No se pudo actualizar el stock', {
         code: error?.code || 'sin código',
+        name: error?.name || 'Error',
         message: error?.message || String(error),
+        stack: error?.stack || 'sin stack disponible',
         collection: 'inventory',
+        documentPath: `${collectionName}/${id}`,
+        field: 'stock',
         material,
         taller,
         action,
