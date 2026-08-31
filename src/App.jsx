@@ -282,10 +282,30 @@ export default function App() {
       console.error('[Firebase] No se pudo sincronizar la colección "inventory"', error);
       setMaterialError('No se pudo sincronizar el inventario con Firebase.');
     });
+    const unsubscribeHistory = onSnapshot(collection(db, 'history'), snapshot => {
+      const nextHistory = snapshot.docs
+        .map(documentSnapshot => ({ id: documentSnapshot.id, ...documentSnapshot.data() }))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setHistory(nextHistory);
+    }, error => {
+      console.error('[Firebase] No se pudo sincronizar la colección "history"', error);
+    });
+    const unsubscribeDeletedBaseMaterials = onSnapshot(collection(db, 'deletedBaseMaterials'), snapshot => {
+      const deletedMaterials = snapshot.docs.map(documentSnapshot => {
+        const data = documentSnapshot.data();
+        return `${data.categoryName}-${data.materialName}`;
+      });
+      setDeletedBaseMaterials(deletedMaterials);
+      console.info('[Firebase] Materiales base eliminados cargados:', deletedMaterials);
+    }, error => {
+      console.error('[Firebase] No se pudo sincronizar la colección "deletedBaseMaterials"', error);
+    });
     return () => {
       unsubscribeAuth();
       unsubscribe();
       unsubscribeInventory();
+      unsubscribeHistory();
+      unsubscribeDeletedBaseMaterials();
     };
   }, []);
 
@@ -312,7 +332,7 @@ export default function App() {
 
   const requireAdministrator = () => true;
 
-  const recordMovement = (material, movement, value, movementUnit, movementResponsible, movementDestination, movementCost) => {
+  const recordMovement = async (material, movement, value, movementUnit, movementResponsible, movementDestination, movementCost) => {
     const category = getCategoryForMaterial(material, allCategories);
     const valueInBase = toBaseUnits(value, movementUnit);
     const costInBase = toBaseCost(movementCost);
@@ -335,8 +355,7 @@ export default function App() {
     });
 
     const now = new Date();
-    setHistory(currentHistory => [{
-      id: Date.now() + Math.random(),
+    const historyEntry = {
       date: now.toLocaleDateString(),
       time: now.toLocaleTimeString(),
       taller,
@@ -345,8 +364,18 @@ export default function App() {
       responsible: movementResponsible.trim(),
       destination: movementDestination.trim(),
       amountVal: valueInBase,
-      amountFormatted: `${value} ${movementUnit}`
-    }, ...currentHistory]);
+      amountFormatted: `${value} ${movementUnit}`,
+      timestamp: now.getTime()
+    };
+    
+    try {
+      if (isFirebaseReady) {
+        await addDoc(collection(db, 'history'), historyEntry);
+      }
+    } catch (error) {
+      console.error('[Firebase] No se pudo guardar el movimiento en historial', error);
+    }
+    
     setShowRegistrationSuccess(true);
     return true;
   };
@@ -357,11 +386,11 @@ export default function App() {
     return () => window.clearTimeout(timeoutId);
   }, [showRegistrationSuccess]);
 
-  const handleMovement = (e, movement) => {
+  const handleMovement = async (e, movement) => {
     e.preventDefault();
     if (!requireAdministrator()) return;
     if (!selectedMat || !amount) return false;
-    const wasRecorded = recordMovement(selectedMat, movement, amount, unit, responsible, destination, unitCost);
+    const wasRecorded = await recordMovement(selectedMat, movement, amount, unit, responsible, destination, unitCost);
     if (!wasRecorded) return false;
     setAmount('');
     setSelectedMat('');
@@ -373,9 +402,9 @@ export default function App() {
     return true;
   };
 
-  const finalizeQuickMove = () => {
+  const finalizeQuickMove = async () => {
     if (pendingQuickMoveAction === 'entrada' || pendingQuickMoveAction === 'salida') {
-      handleMovement({ preventDefault: () => {} }, pendingQuickMoveAction);
+      await handleMovement({ preventDefault: () => {} }, pendingQuickMoveAction);
       setIsQuickMovePinOpen(false);
       setQuickMovePin('');
       setQuickMovePinError('');
@@ -389,19 +418,19 @@ export default function App() {
     setPendingQuickMoveAction(null);
   };
 
-  const handleQuickMovePinSubmit = (e) => {
+  const handleQuickMovePinSubmit = async (e) => {
     e.preventDefault();
     if (quickMovePin === '2026') {
       setIsQuickMoveAuthorized(true);
-      finalizeQuickMove();
+      await finalizeQuickMove();
       return;
     }
     setQuickMovePinError('PIN incorrecto');
   };
 
-  const openQuickMovePin = (action) => {
+  const openQuickMovePin = async (action) => {
     if (isQuickMoveAuthorized) {
-      handleMovement({ preventDefault: () => {} }, action);
+      await handleMovement({ preventDefault: () => {} }, action);
       setPendingQuickMoveAction(null);
       return;
     }
@@ -593,8 +622,7 @@ export default function App() {
         [inventoryKey]: { ...currentInventory[inventoryKey], stock: nextStock, unit: getBaseUnit(categoryName) }
       }));
       const now = new Date();
-      setHistory(currentHistory => [{
-        id: Date.now() + Math.random(),
+      const historyEntry = {
         date: now.toLocaleDateString(),
         time: now.toLocaleTimeString(),
         taller,
@@ -603,8 +631,16 @@ export default function App() {
         responsible: '',
         destination: 'Ajuste rápido',
         amountVal: amountInBase,
-        amountFormatted: `${amountValue} ${quickAdjustmentUnit}`
-      }, ...currentHistory]);
+        amountFormatted: `${amountValue} ${quickAdjustmentUnit}`,
+        timestamp: now.getTime()
+      };
+      try {
+        if (isFirebaseReady) {
+          await addDoc(collection(db, 'history'), historyEntry);
+        }
+      } catch (error) {
+        console.error('[Firebase] No se pudo guardar el ajuste en historial', error);
+      }
       setQuickAdjustment(null);
     } catch (error) {
       console.error(error);
@@ -647,26 +683,41 @@ export default function App() {
   const handleDeleteMaterial = async (material, categoryName) => {
     if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
     const customMaterial = customMaterials.find(item => item.name === material && item.categoryName === categoryName);
-    if (!customMaterial?.id) {
-      setDeletedBaseMaterials(current => [...current, `${categoryName}-${material}`]);
-      setMaterialError('');
+    
+    // Si es un material personalizado, eliminar de Firebase
+    if (customMaterial?.id) {
+      try {
+        await deleteDoc(doc(db, 'materials', customMaterial.id));
+        setInventory(currentInventory => {
+          const nextInventory = { ...currentInventory };
+          delete nextInventory[`${customMaterial.taller || taller}-${material}`];
+          return nextInventory;
+        });
+        if (selectedMat === material) {
+          setSelectedMat('');
+          setMaterialQuery('');
+          setIsMaterialListOpen(false);
+        }
+      } catch (error) {
+        console.error('No se pudo eliminar el material de Firebase', error);
+        setMaterialError('No se pudo eliminar el material. Revisa la conexión y los permisos de Firebase.');
+      }
       return;
     }
 
+    // Si es un material base, guardar registro de eliminación en Firebase
     try {
-      await deleteDoc(doc(db, 'materials', customMaterial.id));
-      setInventory(currentInventory => {
-        const nextInventory = { ...currentInventory };
-        delete nextInventory[`${customMaterial.taller || taller}-${material}`];
-        return nextInventory;
-      });
-      if (selectedMat === material) {
-        setSelectedMat('');
-        setMaterialQuery('');
-        setIsMaterialListOpen(false);
-      }
+      const deletionRecord = {
+        categoryName,
+        materialName: material,
+        deletedAt: serverTimestamp()
+      };
+      await addDoc(collection(db, 'deletedBaseMaterials'), deletionRecord);
+      setDeletedBaseMaterials(current => [...current, `${categoryName}-${material}`]);
+      setMaterialError('');
+      console.info('[Firebase] Material base eliminado y registrado en deletedBaseMaterials', deletionRecord);
     } catch (error) {
-      console.error('No se pudo eliminar el material de Firebase', error);
+      console.error('No se pudo guardar la eliminación del material base en Firebase', error);
       setMaterialError('No se pudo eliminar el material. Revisa la conexión y los permisos de Firebase.');
     }
   };
@@ -704,8 +755,7 @@ export default function App() {
       console.info('[Firebase] Guardando material en la colección "materials"', materialData);
       await addDoc(collection(db, 'materials'), materialData);
       const now = new Date();
-      setHistory(currentHistory => [{
-        id: Date.now() + Math.random(),
+      const historyEntry = {
         date: now.toLocaleDateString(),
         time: now.toLocaleTimeString(),
         taller,
@@ -714,8 +764,14 @@ export default function App() {
         responsible: '',
         destination: 'Material nuevo',
         amountVal: materialData.initialStock,
-        amountFormatted: `${amountValue} ${newMaterialUnit}`
-      }, ...currentHistory]);
+        amountFormatted: `${amountValue} ${newMaterialUnit}`,
+        timestamp: now.getTime()
+      };
+      try {
+        await addDoc(collection(db, 'history'), historyEntry);
+      } catch (error) {
+        console.error('[Firebase] No se pudo guardar el nuevo material en historial', error);
+      }
       setIsMaterialModalOpen(false);
     } catch (error) {
       console.error('[Firebase] No se pudo guardar el material', {
@@ -767,7 +823,7 @@ export default function App() {
 
   const handleHistoryToggle = () => setIsHistoryOpen(current => !current);
 
-  const handleDeleteMovement = (id, movTaller, movMat, movType, movVal) => {
+  const handleDeleteMovement = async (id, movTaller, movMat, movType, movVal) => {
     if (!requireAdministrator()) return;
     const key = `${movTaller}-${movMat}`;
     setInventory(currentInventory => {
@@ -777,7 +833,13 @@ export default function App() {
         : currentStock + movVal;
       return { ...currentInventory, [key]: { ...currentInventory[key], stock: revertedStock } };
     });
-    setHistory(currentHistory => currentHistory.filter(item => item.id !== id));
+    try {
+      if (isFirebaseReady) {
+        await deleteDoc(doc(db, 'history', id));
+      }
+    } catch (error) {
+      console.error('[Firebase] No se pudo eliminar el movimiento del historial', error);
+    }
   };
 
   const exportInventory = () => {
