@@ -255,6 +255,46 @@ button,
 	box-shadow: 0 16px 28px rgba(28, 14, 8, 0.18), 0 4px 10px rgba(28, 14, 8, 0.1);
 }
 
+.material-row {
+	max-height: 15rem;
+	opacity: 0;
+	transform: translate3d(0, 0.5rem, 0);
+	animation: material-row-enter 0.42s ease-out var(--material-delay, 0ms) both;
+	transition: max-height 0.28s ease, opacity 0.28s ease, transform 0.28s ease, padding 0.28s ease, border-color 0.28s ease;
+	will-change: transform, opacity;
+}
+
+.material-row-deleting {
+	max-height: 0;
+	opacity: 0;
+	transform: translate3d(0, -0.35rem, 0) scaleY(0.92);
+	overflow: hidden;
+	padding-top: 0;
+	padding-bottom: 0;
+	border-color: transparent;
+}
+
+.movement-action-button {
+	transform: translateZ(0);
+	transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+	will-change: transform;
+}
+
+.movement-action-button:hover {
+	filter: brightness(1.08);
+	box-shadow: 0 7px 16px rgba(0, 0, 0, 0.2);
+}
+
+.movement-action-button:active {
+	transform: scale(0.96);
+	transition-duration: 0.08s;
+}
+
+.movement-action-button:focus-visible {
+	outline: 2px solid #f5eadd;
+	outline-offset: 2px;
+}
+
 .artisanal-card .category-ring {
 	color: #f5eadd;
 	stroke-dashoffset: 100;
@@ -621,6 +661,17 @@ button,
 	to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes material-row-enter {
+	from {
+		opacity: 0;
+		transform: translate3d(0, 0.5rem, 0);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+}
+
 @keyframes ring-fill {
 	to { stroke-dashoffset: 0; }
 }
@@ -758,5 +809,16 @@ button,
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
+	}
+
+	.material-row {
+		opacity: 1;
+		transform: none;
+		animation: none;
+	}
+
+	.material-row-deleting {
+		opacity: 0;
+		max-height: 0;
 	}
 }

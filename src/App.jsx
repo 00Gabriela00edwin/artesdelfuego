@@ -268,6 +268,7 @@ export default function App() {
   const [openCategories, setOpenCategories] = useState(new Set());
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('all');
+  const [deletingMaterials, setDeletingMaterials] = useState(() => new Set());
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [calculatorFormula, setCalculatorFormula] = useState('manual');
   const [calculatorTotal, setCalculatorTotal] = useState('');
@@ -760,6 +761,9 @@ export default function App() {
 
   const handleDeleteMaterial = async (material, categoryName) => {
     if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
+    const materialKey = `${categoryName}-${material}`;
+    setDeletingMaterials(current => new Set(current).add(materialKey));
+    await new Promise(resolve => window.setTimeout(resolve, 280));
     const customMaterial = customMaterials.find(item => item.name === material && item.categoryName === categoryName);
     
     // Si es un material personalizado, eliminar de Firebase
@@ -779,6 +783,11 @@ export default function App() {
       } catch (error) {
         console.error('No se pudo eliminar el material de Firebase', error);
         setMaterialError('No se pudo eliminar el material. Revisa la conexión y los permisos de Firebase.');
+        setDeletingMaterials(current => {
+          const next = new Set(current);
+          next.delete(materialKey);
+          return next;
+        });
       }
       return;
     }
@@ -796,6 +805,11 @@ export default function App() {
     } catch (error) {
       console.error('No se pudo guardar la eliminación del material base en Firebase', error);
       setMaterialError('No se pudo eliminar el material. Revisa la conexión y los permisos de Firebase.');
+      setDeletingMaterials(current => {
+        const next = new Set(current);
+        next.delete(materialKey);
+        return next;
+      });
     }
   };
 
@@ -1100,8 +1114,8 @@ export default function App() {
           <span className="text-xs text-[#C9B9AC]">Se registra internamente en ml.</span>
         </div>}
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <button type="button" onClick={() => openQuickMovePin('entrada')} className="rounded-lg bg-green-700 p-3 font-bold text-white hover:bg-green-800">Registrar entrada (+)</button>
-          <button type="button" onClick={() => openQuickMovePin('salida')} className="rounded-lg bg-red-700 p-3 font-bold text-white hover:bg-red-800">Registrar salida (-)</button>
+          <button type="button" onClick={() => openQuickMovePin('entrada')} className="movement-action-button rounded-lg bg-green-700 p-3 font-bold text-white hover:bg-green-800">Registrar entrada (+)</button>
+          <button type="button" onClick={() => openQuickMovePin('salida')} className="movement-action-button rounded-lg bg-red-700 p-3 font-bold text-white hover:bg-red-800">Registrar salida (-)</button>
         </div>
         {showRegistrationSuccess && <div className="registration-success absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-black/70 p-6 text-center backdrop-blur-sm" role="status" aria-live="assertive">
           <div className="registration-success-content flex flex-col items-center gap-3">
@@ -1359,7 +1373,7 @@ export default function App() {
                 <Plus size={16} /> Agregar material
               </button>
               {isCategoryOpen && <div id={`category-${category.name}`} className="mt-4 border-t border-current/20 pt-2">
-                {category.materials.map(material => {
+                {category.materials.map((material, materialIndex) => {
                   const materialStock = inventory[`${taller}-${material}`]?.stock || 0;
                   const isLowStock = materialStock < minimumStock;
                   const materialPercentage = Math.round((materialStock / getMaxStockForCategory(category.name)) * 100);
@@ -1368,7 +1382,8 @@ export default function App() {
                   const formulaKey = `${category.name}-${material}`;
                   const isFormulaOpen = openFormula === formulaKey;
                   const formula = formulaDrafts[formulaKey] || getGresFormula(material);
-                  return <div key={material} className="py-2 text-sm border-b border-current/10 last:border-0">
+                  const isDeleting = deletingMaterials.has(formulaKey);
+                  return <div key={material} className={`material-row py-2 text-sm border-b border-current/10 last:border-0 ${isDeleting ? 'material-row-deleting' : ''}`} style={{ '--material-delay': `${Math.min(materialIndex * 45, 450)}ms` }}>
                     <div className="grid grid-cols-[1fr_auto] gap-x-3">
                     <div className="min-w-0">
                       <span className="block truncate font-semibold">{material}</span>
