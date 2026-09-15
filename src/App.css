@@ -258,12 +258,30 @@ button,
 .artisanal-card .category-ring {
 	color: #f5eadd;
 	stroke-dashoffset: 100;
-	animation: ring-fill 1.1s ease-out forwards;
+	animation: ring-fill 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+	filter: drop-shadow(0 0 3px rgba(231, 161, 94, 0.5));
 }
 
 .progress-fill {
 	transform-origin: left center;
-	animation: progress-fill 0.9s ease-out both;
+	transition: width 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+	animation: progress-fill 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+	box-shadow: 0 0 7px currentColor;
+}
+
+.progress-high {
+	background: linear-gradient(90deg, #25b96f 0%, #8df06e 55%, #d9ff9b 100%);
+	color: #8df06e;
+}
+
+.progress-medium {
+	background: linear-gradient(90deg, #c8872c 0%, #f0c95c 55%, #fff0a6 100%);
+	color: #f0c95c;
+}
+
+.progress-low {
+	background: linear-gradient(90deg, #ad352e 0%, #ed684d 55%, #ffb079 100%);
+	color: #ed684d;
 }
 
 .low-stock-alert {

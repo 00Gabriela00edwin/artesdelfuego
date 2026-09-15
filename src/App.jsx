@@ -142,15 +142,21 @@ const historyFilters = [
 ];
 
 const AnimatedStockValue = ({ value, categoryName }) => {
-  const [displayedValue, setDisplayedValue] = useState(value);
-  const displayedValueRef = useRef(value);
+  const [displayedValue, setDisplayedValue] = useState(0);
+  const displayedValueRef = useRef(0);
 
   useEffect(() => {
     const startValue = displayedValueRef.current;
-    const change = value - startValue;
+    const targetValue = Number(value) || 0;
+    const change = targetValue - startValue;
     if (change === 0) return undefined;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      displayedValueRef.current = targetValue;
+      setDisplayedValue(targetValue);
+      return undefined;
+    }
 
-    const duration = Math.min(900, Math.max(300, Math.abs(change) * 3));
+    const duration = Math.min(800, Math.max(280, Math.abs(change) * 2));
     let animationFrame;
     let startTime;
     const animate = timestamp => {
@@ -168,6 +174,41 @@ const AnimatedStockValue = ({ value, categoryName }) => {
   }, [value]);
 
   return formatStock(displayedValue, categoryName);
+};
+
+const AnimatedPercentage = ({ value }) => {
+  const [displayedValue, setDisplayedValue] = useState(0);
+  const displayedValueRef = useRef(0);
+
+  useEffect(() => {
+    const startValue = displayedValueRef.current;
+    const targetValue = Number(value) || 0;
+    const change = targetValue - startValue;
+    if (change === 0) return undefined;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      displayedValueRef.current = targetValue;
+      setDisplayedValue(targetValue);
+      return undefined;
+    }
+
+    const duration = 650;
+    let animationFrame;
+    let startTime;
+    const animate = timestamp => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      const nextValue = startValue + change * easedProgress;
+      displayedValueRef.current = nextValue;
+      setDisplayedValue(nextValue);
+      if (progress < 1) animationFrame = window.requestAnimationFrame(animate);
+    };
+
+    animationFrame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [value]);
+
+  return `${Math.round(displayedValue)}%`;
 };
 
 export default function App() {
@@ -406,13 +447,13 @@ export default function App() {
     };
     
     try {
-      if (isFirebaseReady) {
-        await addDoc(collection(db, 'history'), historyEntry);
-      }
+      await addDoc(collection(db, 'history'), historyEntry);
     } catch (error) {
       console.error('[Firebase] No se pudo guardar el movimiento en historial', error);
+      setMaterialError('El stock se actualizó, pero no se pudo guardar el movimiento en el historial. Intenta nuevamente.');
+      return false;
     }
-    
+
     setShowRegistrationSuccess(true);
     return true;
   };
@@ -1301,9 +1342,9 @@ export default function App() {
                 <div className="relative w-16 h-16 shrink-0" role="img" aria-label={`${category.name}: ${categoryPercentage}% de stock`}>
                   <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
                     <path className="text-white/20" stroke="currentColor" strokeWidth="4" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                    <path className="category-ring" stroke="currentColor" strokeWidth="4" strokeLinecap="round" fill="none" strokeDasharray={`${categoryProgress}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    <path key={categoryProgress} className="category-ring" stroke="currentColor" strokeWidth="4" strokeLinecap="round" fill="none" strokeDasharray="100 100" strokeDashoffset={100 - categoryProgress} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{categoryPercentage}%</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold"><AnimatedPercentage value={categoryPercentage} /></span>
                 </div>
                 <div>
                   <h3 className="font-bold">{category.name}</h3>
@@ -1323,7 +1364,7 @@ export default function App() {
                   const isLowStock = materialStock < minimumStock;
                   const materialPercentage = Math.round((materialStock / getMaxStockForCategory(category.name)) * 100);
                   const materialProgress = Math.min(100, Math.max(0, materialPercentage));
-                  const progressColor = materialPercentage > 70 ? 'bg-green-600' : materialPercentage > 30 ? 'bg-yellow-500' : 'bg-red-600';
+                  const progressColor = materialPercentage > 70 ? 'progress-high' : materialPercentage > 30 ? 'progress-medium' : 'progress-low';
                   const formulaKey = `${category.name}-${material}`;
                   const isFormulaOpen = openFormula === formulaKey;
                   const formula = formulaDrafts[formulaKey] || getGresFormula(material);
