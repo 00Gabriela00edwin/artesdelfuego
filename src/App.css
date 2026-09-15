@@ -57,6 +57,20 @@ button,
 	overflow: hidden;
 }
 
+.movement-panel {
+	overflow: visible;
+	position: relative;
+	z-index: 10;
+}
+
+.material-results {
+	position: absolute;
+	z-index: 50;
+	max-height: 15rem;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
 .tool-panel {
 	background: #ead6b8 !important;
 	border-color: #b98256 !important;

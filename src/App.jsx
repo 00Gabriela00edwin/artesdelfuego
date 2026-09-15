@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus, CheckCircle2 } from 'lucide-react';
 import { auth, db } from './firebase';
 
@@ -337,22 +337,45 @@ export default function App() {
     const valueInBase = toBaseUnits(value, movementUnit);
     const costInBase = toBaseCost(movementCost);
     if (!category || !Number.isFinite(valueInBase) || valueInBase <= 0) return false;
+    if (!isFirebaseReady) {
+      setMaterialError('Firebase todavía está conectando. Intenta nuevamente en unos segundos.');
+      return false;
+    }
 
     const key = `${taller}-${material}`;
-    setInventory(currentInventory => {
-      const currentStock = currentInventory[key]?.stock || 0;
-      const nextStock = movement === 'entrada'
-        ? currentStock + valueInBase
-        : Math.max(0, currentStock - valueInBase);
-      return {
-        ...currentInventory,
-        [key]: {
+    const inventoryRef = doc(db, 'inventory', getInventoryDocumentId(taller, material));
+    let nextStock;
+
+    try {
+      await runTransaction(db, async transaction => {
+        const inventorySnapshot = await transaction.get(inventoryRef);
+        const currentStock = Number(inventorySnapshot.data()?.stock ?? inventory[key]?.stock ?? 0);
+        nextStock = movement === 'entrada'
+          ? currentStock + valueInBase
+          : Math.max(0, currentStock - valueInBase);
+        transaction.set(inventoryRef, {
+          taller,
+          material,
+          categoryName: category.name,
           stock: nextStock,
           unit: getBaseUnit(category.name),
-          unitCostBase: costInBase === null ? currentInventory[key]?.unitCostBase || 0 : costInBase
-        }
-      };
-    });
+          updatedAt: new Date()
+        }, { merge: true });
+      });
+    } catch (error) {
+      console.error('[Firebase] No se pudo guardar el stock', error);
+      setMaterialError('No se pudo guardar el stock. Revisa la conexión y los permisos de Firebase.');
+      return false;
+    }
+
+    setInventory(currentInventory => ({
+      ...currentInventory,
+      [key]: {
+        stock: nextStock,
+        unit: getBaseUnit(category.name),
+        unitCostBase: costInBase === null ? currentInventory[key]?.unitCostBase || 0 : costInBase
+      }
+    }));
 
     const now = new Date();
     const historyEntry = {
@@ -715,7 +738,6 @@ export default function App() {
       await addDoc(collection(db, 'deletedBaseMaterials'), deletionRecord);
       setDeletedBaseMaterials(current => [...current, `${categoryName}-${material}`]);
       setMaterialError('');
-      console.info('[Firebase] Material base eliminado y registrado en deletedBaseMaterials', deletionRecord);
     } catch (error) {
       console.error('No se pudo guardar la eliminación del material base en Firebase', error);
       setMaterialError('No se pudo eliminar el material. Revisa la conexión y los permisos de Firebase.');
@@ -754,6 +776,14 @@ export default function App() {
     try {
       console.info('[Firebase] Guardando material en la colección "materials"', materialData);
       await addDoc(collection(db, 'materials'), materialData);
+      await setDoc(doc(db, 'inventory', getInventoryDocumentId(taller, materialName)), {
+        taller,
+        material: materialName,
+        categoryName: newMaterialCategory,
+        stock: materialData.initialStock,
+        unit: getBaseUnit(newMaterialCategory),
+        updatedAt: new Date()
+      }, { merge: true });
       const now = new Date();
       const historyEntry = {
         date: now.toLocaleDateString(),
@@ -907,7 +937,7 @@ export default function App() {
         </nav>
       </header>
 
-      <section className="artisanal-panel relative max-w-7xl mx-auto mb-8 p-6 rounded-2xl">
+      <section className="artisanal-panel movement-panel relative z-10 max-w-7xl mx-auto mb-8 p-6 rounded-2xl">
         <div className="flex items-center justify-between gap-4 mb-5">
           <div>
             <p className="text-xs uppercase tracking-widest text-[#C85A32] font-bold">Carga rápida</p>
@@ -945,7 +975,7 @@ export default function App() {
               className="mt-1 w-full p-3 bg-[#1F1815] rounded-lg border border-white/10 focus:border-[#C85A32] outline-none"
             />
             {isMaterialListOpen && (
-              <div id="material-results" role="listbox" className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-lg border border-[#C85A32] bg-[#1F1815] p-2 shadow-2xl">
+              <div id="material-results" role="listbox" className="material-results absolute left-0 right-0 top-full z-50 mt-2 max-h-60 overflow-y-auto rounded-lg border border-[#C85A32] bg-[#1F1815] p-2 shadow-2xl">
                 {filteredCategories.length === 0 ? <p className="p-3 text-sm text-[#C9B9AC]">No se encontraron materiales en esta categoría.</p> : filteredCategories.map(category => (
                   <div key={category.name}>
                     <p className="px-3 pt-2 pb-1 text-xs font-bold uppercase tracking-wider text-[#C85A32]">{category.name}</p>
