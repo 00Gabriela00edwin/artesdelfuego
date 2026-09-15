@@ -133,6 +133,13 @@ const formatCalculatedAmount = (value, unit) => {
   return `${value.toFixed(3)} ${unit}`;
 };
 const getInventoryDocumentId = (taller, material) => encodeURIComponent(`${taller}::${material}`);
+const getMovementDate = movement => new Date(Number.isFinite(Number(movement.timestamp)) ? Number(movement.timestamp) : Date.now());
+const historyFilters = [
+  { id: 'all', label: 'Todos' },
+  { id: 'today', label: 'Hoy' },
+  { id: 'week', label: 'Esta semana' },
+  { id: 'month', label: 'Este mes' }
+];
 
 const AnimatedStockValue = ({ value, categoryName }) => {
   const [displayedValue, setDisplayedValue] = useState(value);
@@ -219,6 +226,7 @@ export default function App() {
   const [isLabOpen, setIsLabOpen] = useState(false);
   const [openCategories, setOpenCategories] = useState(new Set());
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState('all');
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [calculatorFormula, setCalculatorFormula] = useState('manual');
   const [calculatorTotal, setCalculatorTotal] = useState('');
@@ -342,8 +350,11 @@ export default function App() {
       return false;
     }
 
-    const key = `${taller}-${material}`;
-    const inventoryRef = doc(db, 'inventory', getInventoryDocumentId(taller, material));
+    const materialName = category.materials.find(item => item.toLocaleLowerCase() === String(material).trim().toLocaleLowerCase()) || String(material).trim();
+    const key = `${taller}-${materialName}`;
+    const inventoryRef = doc(db, 'inventory', getInventoryDocumentId(taller, materialName));
+    const customMaterial = customMaterials.find(item => item.name?.trim().toLocaleLowerCase() === materialName.toLocaleLowerCase() && item.categoryName === category.name && (item.taller || 'Posadas') === taller);
+    const materialRef = customMaterial ? doc(db, 'materials', customMaterial.id) : null;
     let nextStock;
 
     try {
@@ -355,12 +366,15 @@ export default function App() {
           : Math.max(0, currentStock - valueInBase);
         transaction.set(inventoryRef, {
           taller,
-          material,
+          material: materialName,
           categoryName: category.name,
           stock: nextStock,
           unit: getBaseUnit(category.name),
           updatedAt: new Date()
         }, { merge: true });
+        if (materialRef) {
+          transaction.set(materialRef, { stock: nextStock, updatedAt: new Date() }, { merge: true });
+        }
       });
     } catch (error) {
       console.error('[Firebase] No se pudo guardar el stock', error);
@@ -382,7 +396,7 @@ export default function App() {
       date: now.toLocaleDateString(),
       time: now.toLocaleTimeString(),
       taller,
-      material,
+      material: materialName,
       type: movement,
       responsible: movementResponsible.trim(),
       destination: movementDestination.trim(),
@@ -915,6 +929,29 @@ export default function App() {
   const activeLabForm = labForms[activeLabTab];
   const activeLabTrials = labTrials[activeLabTab];
   const labTabLabels = { pastas: 'Pastas', barbotinas: 'Barbotinas', esmaltes: 'Esmaltes' };
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)).getTime();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const filteredHistory = history.filter(movement => {
+    const movementTime = getMovementDate(movement).getTime();
+    if (historyFilter === 'today') return movementTime >= startOfToday;
+    if (historyFilter === 'week') return movementTime >= startOfWeek;
+    if (historyFilter === 'month') return movementTime >= startOfMonth;
+    return true;
+  });
+  const groupedHistory = filteredHistory.reduce((groups, movement) => {
+    const movementDate = getMovementDate(movement);
+    const groupKey = `${movementDate.getFullYear()}-${String(movementDate.getMonth() + 1).padStart(2, '0')}`;
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        label: movementDate.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }),
+        movements: []
+      };
+    }
+    groups[groupKey].movements.push(movement);
+    return groups;
+  }, {});
 
   return (
     <div className="artisanal-app flex min-h-screen flex-col p-4 md:p-6 xl:p-8">
@@ -1322,7 +1359,7 @@ export default function App() {
           );
         })}
       </main>
-      <section className="artisanal-panel tool-panel order-2 max-w-7xl mx-auto mt-8 mb-8 w-full rounded-2xl p-5" aria-labelledby="historial-title">
+      <section className="artisanal-panel history-panel order-2 max-w-7xl mx-auto mt-8 mb-8 w-full rounded-2xl p-5" aria-labelledby="historial-title">
         <div className={`flex items-center justify-between gap-3 ${isHistoryOpen ? 'mb-5 border-b border-[#b98256]/40 pb-4' : ''}`}>
           <h2 id="historial-title" className="flex items-center gap-2 font-serif text-xl font-bold"><Clock size={20} /> HISTORIAL DE MOVIMIENTOS</h2>
           <div className="flex items-center gap-2">
@@ -1334,16 +1371,26 @@ export default function App() {
           </div>
         </div>
         {isHistoryOpen && <div id="historial-content">
-        {history.length === 0 ? <p className="text-[#5a3827]">Todavía no hay movimientos registrados.</p> : history.map(movement => (
-          <div key={movement.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 py-2 text-sm">
-            <div>
-              <span className="flex items-center gap-2"><CheckCircle2 className="movement-check text-green-400" size={17} aria-label="Registro confirmado" />{movement.date} {movement.time} | {movement.taller} | {movement.material}</span>
-              {(movement.responsible || movement.destination) && <p className="text-[#C9B9AC] mt-1">{movement.responsible && `Responsable: ${movement.responsible}`}{movement.responsible && movement.destination && ' | '}{movement.destination && `Destino: ${movement.destination}`}</p>}
-            </div>
-            <span className={movement.type === 'entrada' ? 'text-green-400' : 'text-red-400'}>{movement.type === 'entrada' ? '+' : '-'} {movement.amountFormatted}</span>
-            <button type="button" onClick={() => handleDeleteMovement(movement.id, movement.taller, movement.material, movement.type, movement.amountVal)} className="text-red-300" aria-label={`Eliminar movimiento de ${movement.material}`}><Trash2 size={16} /></button>
+          <div className="history-toolbar" role="group" aria-label="Filtrar historial por período">
+            {historyFilters.map(filter => <button key={filter.id} type="button" onClick={() => setHistoryFilter(filter.id)} className={`history-filter ${historyFilter === filter.id ? 'history-filter-active' : ''}`} aria-pressed={historyFilter === filter.id}>{filter.label}</button>)}
           </div>
-        ))}
+          {history.length === 0 ? <p className="history-empty">Todavía no hay movimientos registrados.</p> : filteredHistory.length === 0 ? <p className="history-empty">No hay movimientos en este período.</p> : Object.entries(groupedHistory).map(([groupKey, group]) => (
+            <section key={groupKey} className="history-group" aria-labelledby={`history-group-${groupKey}`}>
+              <h3 id={`history-group-${groupKey}`} className="history-group-title">{group.label}</h3>
+              <div className="history-entries">
+                {group.movements.map(movement => (
+                  <div key={movement.id} className="history-entry">
+                    <div className="history-entry-details">
+                      <span className="history-entry-title"><CheckCircle2 className="movement-check text-green-400" size={17} aria-label="Registro confirmado" />{movement.date} {movement.time} <span className="history-entry-context">| {movement.taller} | {movement.material}</span></span>
+                      {(movement.responsible || movement.destination) && <p className="history-entry-meta">{movement.responsible && `Responsable: ${movement.responsible}`}{movement.responsible && movement.destination && ' | '}{movement.destination && `Destino: ${movement.destination}`}</p>}
+                    </div>
+                    <span className={`history-amount ${movement.type === 'entrada' ? 'text-green-400' : 'text-red-400'}`}>{movement.type === 'entrada' ? '+' : '-'} {movement.amountFormatted}</span>
+                    <button type="button" onClick={() => handleDeleteMovement(movement.id, movement.taller, movement.material, movement.type, movement.amountVal)} className="history-delete text-red-300" aria-label={`Eliminar movimiento de ${movement.material}`}><Trash2 size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
         </div>}
       </section>
       <button

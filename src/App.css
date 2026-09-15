@@ -71,6 +71,111 @@ button,
 	overscroll-behavior: contain;
 }
 
+.history-panel {
+	background: rgba(36, 23, 20, 0.96) !important;
+	border-color: #8d5239 !important;
+	color: #f5eadd;
+}
+
+.history-panel:hover {
+	border-color: #d49758 !important;
+}
+
+.history-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-bottom: 1.25rem;
+}
+
+.history-filter {
+	border: 1px solid #8d5239;
+	border-radius: 0.5rem;
+	padding: 0.5rem 0.85rem;
+	background: #2a1b16;
+	color: #e1c2a1;
+	font-size: 0.875rem;
+	font-weight: 700;
+}
+
+.history-filter:hover,
+.history-filter-active {
+	border-color: #d49758;
+	background: #b96542;
+	color: #fff8ed;
+}
+
+.history-group + .history-group {
+	margin-top: 1.5rem;
+}
+
+.history-group-title {
+	margin-bottom: 0.5rem;
+	border-bottom: 1px solid rgba(212, 151, 88, 0.4);
+	padding-bottom: 0.4rem;
+	color: #e7a15e;
+	font-family: 'Lora', serif;
+	font-size: 1rem;
+	font-weight: 700;
+	text-transform: capitalize;
+}
+
+.history-entries {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.history-entry {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 0.75rem;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	padding: 0.65rem 0.25rem;
+	font-size: 0.875rem;
+}
+
+.history-entry-details {
+	min-width: 0;
+}
+
+.history-entry-title {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+	color: #f5eadd;
+}
+
+.history-entry-context {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.history-entry-meta {
+	margin-top: 0.25rem;
+	color: #c9b9ac;
+	font-size: 0.75rem;
+}
+
+.history-amount {
+	white-space: nowrap;
+	font-weight: 700;
+}
+
+.history-delete {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2rem;
+	min-height: 2rem;
+}
+
+.history-empty {
+	color: #c9b9ac;
+}
+
 .tool-panel {
 	background: #ead6b8 !important;
 	border-color: #b98256 !important;
@@ -573,6 +678,37 @@ button,
 }
 
 @media (max-width: 520px) {
+	.history-toolbar {
+		margin-bottom: 1rem;
+	}
+
+	.history-filter {
+		flex: 1 1 calc(50% - 0.25rem);
+		padding-inline: 0.5rem;
+	}
+
+	.history-entry {
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.5rem;
+	}
+
+	.history-amount {
+		grid-column: 1;
+		grid-row: 2;
+		padding-left: 1.65rem;
+	}
+
+	.history-delete {
+		grid-column: 2;
+		grid-row: 1 / span 2;
+	}
+
+	.history-entry-context {
+		display: block;
+		margin-top: 0.2rem;
+		white-space: normal;
+	}
+
 	.artisanal-header {
 		gap: 0.75rem;
 	}
