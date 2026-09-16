@@ -3,6 +3,7 @@ import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus, CheckCircle2 } from 'lucide-react';
 import { auth, db } from './firebase';
+import { buildAvailableMaterials, isProtectedBaseMaterial } from './materials';
 
 const gresMaterials = [
   { name: 'Bordo', formula: 'Feldespato 45% · Sílice 30% · Caolín 15% · Óxido de hierro 10%' },
@@ -285,10 +286,7 @@ export default function App() {
   const [calculatorUnit, setCalculatorUnit] = useState('kg');
   const [calculatorRows, setCalculatorRows] = useState([{ ingredient: '', percentage: '' }]);
 
-  const allCategories = categories.map(category => ({
-    ...category,
-    materials: [...category.materials.filter(material => !deletedBaseMaterials.includes(`${category.name}-${material}`)), ...customMaterials.filter(material => material.categoryName === category.name).map(material => material.name)]
-  }));
+  const allCategories = buildAvailableMaterials(categories, deletedBaseMaterials, customMaterials);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
@@ -770,8 +768,12 @@ export default function App() {
   };
 
   const handleDeleteMaterial = async (material, categoryName) => {
-    if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
     const materialKey = `${categoryName}-${material}`;
+    if (isProtectedBaseMaterial(materialKey)) {
+      setMaterialError('El material YESO está protegido y no puede eliminarse de la base del sistema.');
+      return;
+    }
+    if (!window.confirm(`¿Eliminar el material "${material}" de esta categoría?`)) return;
     setDeletingMaterials(current => new Set(current).add(materialKey));
     await new Promise(resolve => window.setTimeout(resolve, 280));
     const customMaterial = customMaterials.find(item => item.name === material && item.categoryName === categoryName);
