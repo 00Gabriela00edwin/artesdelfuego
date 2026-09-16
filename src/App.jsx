@@ -71,6 +71,16 @@ const categories = [
     name: "PIGMENTOS B/C",
     bgClass: "bg-[#3e261b] border-[#b96f48]",
     materials: ["AZ 63", "AZ 60", "AZ64", "NG13", "NG10", "MR21", "MR20", "MR55", "RJ30", "RJ38", "RJ39", "RJ36", "RS32", "LI34", "GR12", "AM56", "verde40", "verde41", "naranja55"]
+  },
+  {
+    name: "MATERIALES DE HORNO",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
+    materials: []
+  },
+  {
+    name: "HERRAMIENTAS",
+    bgClass: "bg-[#3e261b] border-[#b96f48]",
+    materials: []
   }
 ];
 
@@ -267,7 +277,7 @@ export default function App() {
   const [isLabOpen, setIsLabOpen] = useState(false);
   const [openCategories, setOpenCategories] = useState(new Set());
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState('all');
+  const [historyFilter, setHistoryFilter] = useState('today');
   const [deletingMaterials, setDeletingMaterials] = useState(() => new Set());
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [calculatorFormula, setCalculatorFormula] = useState('manual');
