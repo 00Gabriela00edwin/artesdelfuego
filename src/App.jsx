@@ -146,10 +146,10 @@ const formatCalculatedAmount = (value, unit) => {
 const getInventoryDocumentId = (taller, material) => encodeURIComponent(`${taller}::${material}`);
 const getMovementDate = movement => new Date(Number.isFinite(Number(movement.timestamp)) ? Number(movement.timestamp) : Date.now());
 const historyFilters = [
-  { id: 'all', label: 'Todos' },
   { id: 'today', label: 'Hoy' },
   { id: 'week', label: 'Esta semana' },
-  { id: 'month', label: 'Este mes' }
+  { id: 'month', label: 'Este mes' },
+  { id: 'all', label: 'Todos' }
 ];
 
 const AnimatedStockValue = ({ value, categoryName }) => {
@@ -932,7 +932,15 @@ export default function App() {
     setIsCalculatorOpen(true);
   };
 
-  const handleHistoryToggle = () => setIsHistoryOpen(current => !current);
+  const handleHistoryToggle = () => {
+    setIsHistoryOpen(current => {
+      const next = !current;
+      if (next && historyFilter === 'all') {
+        setHistoryFilter('today');
+      }
+      return next;
+    });
+  };
 
   const handleDeleteMovement = async (id, movTaller, movMat, movType, movVal) => {
     if (!requireAdministrator()) return;
