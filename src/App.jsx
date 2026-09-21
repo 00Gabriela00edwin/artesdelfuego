@@ -4,6 +4,7 @@ import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction, serverT
 import { Package, AlertTriangle, Layers, Clock, Trash2, Download, Lock, X, FlaskConical, Calculator, Plus, CheckCircle2 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { buildAvailableMaterials, isProtectedBaseMaterial } from './materials';
+import { formatStock, getBaseUnit, isUnitlessCategory } from './stockUtils';
 
 const gresMaterials = [
   { name: 'Bordo', formula: 'Feldespato 45% · Sílice 30% · Caolín 15% · Óxido de hierro 10%' },
@@ -95,7 +96,6 @@ const unitOptions = {
 const getCategoryForMaterial = (material, categoryList = categories) => categoryList.find(category => category.materials.includes(material));
 const getGresFormula = (material) => gresMaterials.find(item => item.name === material)?.formula || '';
 const getUnitOptions = (categoryName) => liquidCategories.has(categoryName) ? unitOptions.liquid : unitOptions.dry;
-const getBaseUnit = (categoryName) => liquidCategories.has(categoryName) ? 'ml' : 'g';
 const getCostUnit = (categoryName) => liquidCategories.has(categoryName) ? 'L' : 'kg';
 const toBaseCost = (value) => {
   const numericValue = Number(value);
@@ -111,14 +111,6 @@ const toBaseUnits = (value, unit) => {
 const maxStockPerMaterial = 10000;
 const minimumStock = 250;
 const getMaxStockForCategory = (categoryName) => categoryName === gresCategoryName ? 20000 : maxStockPerMaterial;
-const formatStock = (baseValue, categoryName) => {
-  if (liquidCategories.has(categoryName)) {
-    return baseValue >= 1000 ? `${baseValue / 1000} L` : `${baseValue} ml`;
-  }
-  if (baseValue >= 1000) return `${baseValue / 1000} kg`;
-  if (baseValue >= 1) return `${baseValue} g`;
-  return `${baseValue * 1000} mg`;
-};
 const escapeCsvValue = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 const downloadCsv = (filename, headers, rows) => {
   const csv = [headers, ...rows].map(row => row.map(escapeCsvValue).join(';')).join('\r\n');
